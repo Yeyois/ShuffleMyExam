@@ -128,6 +128,26 @@ void main() {
       expect(q2.croppedBox, isNotNull);
     });
 
+    test('degenerate geometry (all words share one x): stream order is '
+        'reversed instead of position-sorted', () {
+      final structure =
+          PdfExamParser.parseBytes(PdfFixtures.degenerateGeometryExam());
+
+      expect(structure.questions, hasLength(2));
+
+      final q1 = structure.questions[0];
+      expect(q1.isShufflable, isTrue);
+      expect(q1.questionText, contains('מהו רכיב החישוב המרכזי'));
+      expect(q1.answers.map((a) => a.text).toList(),
+          ['המעבד', 'הזיכרון', 'הדיסק', 'המסך']);
+      expect(q1.answers.first.isOriginalCorrect, isTrue);
+
+      final q2 = structure.questions[1];
+      expect(q2.isShufflable, isTrue);
+      expect(q2.answers.map((a) => a.text).toList(),
+          ['16 ביט', '8 ביט', '32 ביט', '64 ביט']);
+    });
+
     test('question drafts survive isolate-style JSON round-trip', () {
       final structure = PdfExamParser.parseBytes(PdfFixtures.visualExam());
       final restored = structureRoundTrip(structure);
