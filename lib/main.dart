@@ -1,12 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
+import 'application/providers.dart';
 import 'application/theme_mode_controller.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
+import 'data/local/hive_exam_repository.dart';
+import 'presentation/screens/home_screen.dart';
 
-void main() {
-  runApp(const ProviderScope(child: MixExamApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Hive.initFlutter();
+  final repository = await HiveExamRepository.open();
+  final documentsDir = await getApplicationDocumentsDirectory();
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        examRepositoryProvider.overrideWithValue(repository),
+        imagesRootDirProvider
+            .overrideWithValue('${documentsDir.path}/exam_images'),
+      ],
+      child: const MixExamApp(),
+    ),
+  );
 }
 
 class MixExamApp extends ConsumerWidget {
@@ -26,20 +45,7 @@ class MixExamApp extends ConsumerWidget {
         textDirection: TextDirection.rtl,
         child: child ?? const SizedBox.shrink(),
       ),
-      home: const _ScaffoldPlaceholder(),
-    );
-  }
-}
-
-/// Temporary home until the real Home screen lands in Phase 3.
-class _ScaffoldPlaceholder extends StatelessWidget {
-  const _ScaffoldPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.homeTitle)),
-      body: const Center(child: Text(AppStrings.appTitle)),
+      home: const HomeScreen(),
     );
   }
 }
