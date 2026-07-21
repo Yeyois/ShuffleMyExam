@@ -56,6 +56,47 @@ class PdfFixtures {
     return bytes;
   }
 
+  /// Mimics the quirks of real JCT exam-shell PDFs:
+  ///  - "שאלה מספר X:" headers wrapped into two stacked lines
+  ///  - bullets with a space ("א .")
+  ///  - a page footer ("עמוד 1 מתוך 2") between questions
+  ///  - a bare-numbered decoy line (instructions), which must be ignored
+  ///    because the document uses explicit headers
+  ///  - a question whose א bullet is lost (starts at ב) — integrity guard
+  ///    must route it to the visual path
+  static Uint8List realWorldStyleExam() {
+    final document = PdfDocument();
+    final font = _font();
+    final page = document.pages.add();
+
+    // Decoy: numbered instruction line before any question.
+    _line(page, font, '1. יש לענות על כל השאלות בטופס זה', 50);
+
+    // Q1: split header, spaced bullets.
+    _line(page, font, 'שאלה', 90);
+    _line(page, font, 'מספר 1:', 102);
+    _line(page, font, 'מהו רכיב החישוב המרכזי?', 125);
+    _line(page, font, 'א . המעבד', 150);
+    _line(page, font, 'ב . הזיכרון', 170);
+    _line(page, font, 'ג . הדיסק', 190);
+    _line(page, font, 'ד . המסך', 210);
+
+    // Footer noise inside the block gap.
+    _line(page, font, 'עמוד 1 מתוך 1', 760);
+
+    // Q2: the א bullet was lost by the layout — starts at ב.
+    _line(page, font, 'שאלה', 300);
+    _line(page, font, 'מספר 2:', 312);
+    _line(page, font, 'שאלה שהתשובה הראשונה שלה אבדה', 335);
+    _line(page, font, 'ב . תשובה שנייה', 360);
+    _line(page, font, 'ג . תשובה שלישית', 380);
+    _line(page, font, 'ד . תשובה רביעית', 400);
+
+    final bytes = Uint8List.fromList(document.saveSync());
+    document.dispose();
+    return bytes;
+  }
+
   /// An exam with one visual question (diagram between body and answers)
   /// and one pure-text question, plus one question whose answers are not
   /// extractable as text at all.

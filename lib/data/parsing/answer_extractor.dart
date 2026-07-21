@@ -3,16 +3,32 @@ import '../../domain/models/answer.dart';
 
 /// One extracted answer plus the index of the line its bullet appeared on.
 class ExtractedAnswer {
-  const ExtractedAnswer({required this.answer, required this.lineIndex});
+  const ExtractedAnswer({
+    required this.answer,
+    required this.lineIndex,
+    this.letter,
+  });
 
   final Answer answer;
   final int lineIndex;
+
+  /// The bullet letter (א/ב/ג/ד), or null for a letterless ". טקסט" bullet.
+  final String? letter;
 }
 
 /// Extracts Hebrew-bulleted answers (א. ב. ג. ד.) from the logical-order
 /// lines of a question block.
 abstract final class AnswerExtractor {
-  static final _bullet = RegExp(r'^\s*([אבגד])[.)]\s*(.*)$');
+  // Real exam PDFs often extract the bullet with a space ("א ."), so
+  // whitespace between the letter and the dot/paren is tolerated.
+  static final _bullet = RegExp(r'^\s*([אבגד])\s*[.)]\s*(.*)$');
+
+  // Fragmented templates sometimes lose the bullet letter entirely,
+  // leaving only ". טקסט". Once real bullets have started, such a line
+  // opens the next answer rather than continuing the previous one. Only a
+  // literal dot qualifies — "(" and ")" artifacts are common inside answer
+  // text (mirrored brackets, code snippets).
+  static final _dotOnlyBullet = RegExp(r'^\s*\.\s+(\S.*)$');
 
   /// Scans [lines] (already bidi-normalized) and returns the answers in
   /// extraction order, bullets stripped. The first extracted answer is
@@ -24,9 +40,11 @@ abstract final class AnswerExtractor {
     final buffers = <StringBuffer>[];
 
     for (var i = 0; i < lines.length; i++) {
-      final match = _bullet.firstMatch(lines[i]);
+      final letterMatch = _bullet.firstMatch(lines[i]);
+      final match = letterMatch ??
+          (results.isEmpty ? null : _dotOnlyBullet.firstMatch(lines[i]));
       if (match != null) {
-        buffers.add(StringBuffer(match.group(2)!.trim()));
+        buffers.add(StringBuffer(match.group(match.groupCount)!.trim()));
         results.add(
           ExtractedAnswer(
             answer: Answer(
@@ -35,6 +53,7 @@ abstract final class AnswerExtractor {
               isOriginalCorrect: results.isEmpty,
             ),
             lineIndex: i,
+            letter: letterMatch?.group(1),
           ),
         );
       } else if (buffers.isNotEmpty && lines[i].trim().isNotEmpty) {
@@ -51,6 +70,7 @@ abstract final class AnswerExtractor {
             isOriginalCorrect: results[i].answer.isOriginalCorrect,
           ),
           lineIndex: results[i].lineIndex,
+          letter: results[i].letter,
         ),
     ];
   }
