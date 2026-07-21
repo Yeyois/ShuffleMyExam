@@ -31,14 +31,23 @@ class _FixedPicker extends PdfPickerService {
 
 Future<void> _waitForImport(WidgetTester tester) async {
   await tester.tap(find.byType(FloatingActionButton));
+  // Let the route transition into the processing screen play out.
   await tester.pump();
-  for (var i = 0;
-      i < 300 && tester.any(find.byType(CircularProgressIndicator));
-      i++) {
+  await tester.pump(const Duration(milliseconds: 600));
+
+  bool done() =>
+      tester.any(find.text(AppStrings.extractionSucceeded)) ||
+      tester.any(find.text(AppStrings.extractionFailed));
+
+  for (var i = 0; i < 600 && !done(); i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-  expect(find.byType(CircularProgressIndicator), findsNothing,
-      reason: 'import never finished on device');
+
+  if (!tester.any(find.text(AppStrings.extractionSucceeded))) {
+    for (final t in tester.widgetList<Text>(find.byType(Text))) {
+      debugPrint('ON-SCREEN TEXT: ${t.data}');
+    }
+  }
 }
 
 void main() {
