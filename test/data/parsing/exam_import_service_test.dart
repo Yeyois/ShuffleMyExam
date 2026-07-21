@@ -22,22 +22,17 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
-  group('parseAndRenderEntry via compute()', () {
+  group('parseExamEntry via compute()', () {
     test('parses a text-only exam in a background isolate', () async {
       final pdfPath = '${tempDir.path}/exam.pdf';
       await File(pdfPath).writeAsBytes(PdfFixtures.textOnlyExam());
 
-      final result = await compute(parseAndRenderEntry, <String, dynamic>{
-        'path': pdfPath,
-        'imagesDir': '${tempDir.path}/images',
-        'token': null,
-      });
+      final result = await compute(
+          parseExamEntry, <String, dynamic>{'path': pdfPath});
 
-      final structure = ParsedExamStructure.fromJson(
-          result['structure'] as Map<String, dynamic>);
+      final structure = ParsedExamStructure.fromJson(result);
       expect(structure.questions, hasLength(2));
       expect(structure.questions.every((q) => q.isShufflable), isTrue);
-      expect(result['images'], isEmpty);
     });
   });
 
