@@ -31,6 +31,39 @@ void main() {
       expect(extracted.map((e) => e.answer.text).toList(), ['כן', 'לא']);
     });
 
+    test('supports spaced bullets ("א .") as in real exam PDFs', () {
+      final extracted = AnswerExtractor.extract([
+        'א . המעבד',
+        'ב . הזיכרון',
+      ]);
+      expect(extracted.map((e) => e.answer.text).toList(),
+          ['המעבד', 'הזיכרון']);
+      expect(extracted.map((e) => e.letter).toList(), ['א', 'ב']);
+    });
+
+    test('a letterless ". טקסט" line opens a new answer once bullets have '
+        'started, but never before', () {
+      final extracted = AnswerExtractor.extract([
+        'א. ראשונה',
+        '. שנייה בלי אות',
+      ]);
+      expect(extracted, hasLength(2));
+      expect(extracted[1].answer.text, 'שנייה בלי אות');
+      expect(extracted[1].letter, isNull);
+
+      expect(AnswerExtractor.extract(['. לא תשובה']), isEmpty);
+    });
+
+    test('lines starting with parens stay continuations, not bullets', () {
+      final extracted = AnswerExtractor.extract([
+        'א. קוד',
+        ') lw t0, 0 (a0',
+        'ב. אחר',
+      ]);
+      expect(extracted, hasLength(2));
+      expect(extracted[0].answer.text, 'קוד ) lw t0, 0 (a0');
+    });
+
     test('joins continuation lines into the previous answer', () {
       final extracted = AnswerExtractor.extract([
         'א. תשובה ארוכה שנמשכת',

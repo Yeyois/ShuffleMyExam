@@ -86,16 +86,31 @@ abstract final class BidiFixer {
 /// wins document-wide.
 abstract final class ReconstructionArbiter {
   static final _anchors = [
-    RegExp(r'^\s*[אבגד][.)](\s|$)'),
+    RegExp(r'^\s*[אבגד]\s*[.)](\s|$)'),
     RegExp(r'^\s*שאלה\s'),
-    RegExp(r'^\s*\d{1,3}[.)]\s'),
+    RegExp(r'^\s*\d{1,3}\s*[.)]\s'),
     RegExp(r'^\s*[.):]{0,2}\d{1,3}[.):]{0,2}(\s|$)'),
   ];
+
+  // Bullet/number anchors are nearly symmetric under reversal ("א . טקסט"
+  // reversed still starts with "א ."), so they can't break ties alone.
+  // Frequent Hebrew function words are strongly asymmetric — their
+  // reversals are not words — and decide which family actually reads as
+  // Hebrew.
+  static const _commonWords = {
+    'של', 'את', 'על', 'לא', 'מה', 'הוא', 'היא', 'אם', 'כל', 'גם', //
+    'או', 'בין', 'מהו', 'מהי', 'איזה', 'איזו', 'כמה', 'אשר', 'יש',
+    'אין', 'רק', 'כי', 'עם', 'זה', 'הבא', 'לפי', 'עבור', 'נתון',
+    'שאלה', 'תשובה', 'תשובות', 'הנכונה', 'נכונה', 'נכונות',
+  };
 
   static int score(Iterable<String> lines) {
     var hits = 0;
     for (final line in lines) {
-      if (_anchors.any((r) => r.hasMatch(line))) hits++;
+      if (_anchors.any((r) => r.hasMatch(line))) hits += 2;
+      for (final token in line.split(RegExp(r'\s+'))) {
+        if (_commonWords.contains(token)) hits++;
+      }
     }
     return hits;
   }

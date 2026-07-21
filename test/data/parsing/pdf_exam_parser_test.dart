@@ -102,6 +102,32 @@ void main() {
       expect(lastQuestion.croppedBox!.height, lastQuestion.fullBox!.height);
     });
 
+    test('real-world template quirks: split headers, spaced bullets, '
+        'footer noise, decoy numbering, and the א-integrity guard', () {
+      final structure =
+          PdfExamParser.parseBytes(PdfFixtures.realWorldStyleExam());
+
+      // The bare-numbered instruction line is not a question — the
+      // document uses explicit headers.
+      expect(structure.questions, hasLength(2));
+
+      final q1 = structure.questions[0];
+      expect(q1.isShufflable, isTrue);
+      expect(q1.questionText, contains('מהו רכיב החישוב המרכזי'));
+      expect(q1.questionText, isNot(contains('עמוד')),
+          reason: 'page footers must never leak into question text');
+      expect(q1.answers.map((a) => a.text).toList(),
+          ['המעבד', 'הזיכרון', 'הדיסק', 'המסך']);
+      expect(q1.answers.first.isOriginalCorrect, isTrue);
+
+      // Q2 lost its א bullet: flagging ב as "correct" would be a lie, so
+      // it must fall back to the visual path.
+      final q2 = structure.questions[1];
+      expect(q2.isShufflable, isFalse);
+      expect(q2.answers, isEmpty);
+      expect(q2.croppedBox, isNotNull);
+    });
+
     test('question drafts survive isolate-style JSON round-trip', () {
       final structure = PdfExamParser.parseBytes(PdfFixtures.visualExam());
       final restored = structureRoundTrip(structure);

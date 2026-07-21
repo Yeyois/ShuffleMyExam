@@ -7,7 +7,11 @@
 ///  - ".X " at the start of a raw line (the reversed artifact called out in
 ///    the PRD, for lines that slipped through orientation detection)
 class QuestionStartMatch {
-  const QuestionStartMatch({required this.number, required this.remainder});
+  const QuestionStartMatch({
+    required this.number,
+    required this.remainder,
+    this.explicit = false,
+  });
 
   /// The question number as printed in the document.
   final int number;
@@ -15,6 +19,10 @@ class QuestionStartMatch {
   /// Text following the question marker on the same line (often the start
   /// of the question body).
   final String remainder;
+
+  /// True for the unambiguous "שאלה מספר X" header style. When a document
+  /// uses this style consistently, bare-number matches are noise.
+  final bool explicit;
 }
 
 abstract final class QuestionDetector {
@@ -22,8 +30,8 @@ abstract final class QuestionDetector {
   // of RTL extraction.
   static final _explicit =
       RegExp(r'^\s*שאלה\s+מספר\s*:?\s*(\d+)\s*:?\s*(.*)$');
-  static final _numberedDot = RegExp(r'^\s*(\d{1,3})[.)]\s+(\S.*)$');
-  static final _numberedBare = RegExp(r'^\s*(\d{1,3})[.)]\s*$');
+  static final _numberedDot = RegExp(r'^\s*(\d{1,3})\s*[.)]\s+(\S.*)$');
+  static final _numberedBare = RegExp(r'^\s*(\d{1,3})\s*[.)]\s*$');
   static final _reversedDot = RegExp(r'^\s*\.(\d{1,3})(?:\s+(.*))?$');
 
   /// Matches [line] against all known question-start formats.
@@ -34,6 +42,7 @@ abstract final class QuestionDetector {
       return QuestionStartMatch(
         number: int.parse(explicit.group(1)!),
         remainder: explicit.group(2)!.trim(),
+        explicit: true,
       );
     }
 
