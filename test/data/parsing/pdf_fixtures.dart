@@ -97,6 +97,45 @@ class PdfFixtures {
     return bytes;
   }
 
+  /// Mimics the degenerate-geometry template (as seen in real JCT
+  /// exam-shell PDFs): every word of a line is placed at the SAME x, and
+  /// the content stream holds words in reverse reading order. Extraction
+  /// must fall back to stream-order reversal instead of position sorting.
+  static Uint8List degenerateGeometryExam() {
+    final document = PdfDocument();
+    final font = _font();
+    final page = document.pages.add();
+
+    // Draws [logicalLine]'s words as separate runs, all at x=40, in
+    // reverse reading order — exactly what the degenerate template yields.
+    void degenerateLine(String logicalLine, double y) {
+      final words = logicalLine.split(' ');
+      for (final word in words.reversed) {
+        page.graphics.drawString(
+          word,
+          font,
+          bounds: Rect.fromLTWH(40, y, 500, 18),
+        );
+      }
+    }
+
+    degenerateLine('שאלה מספר 1: מהו רכיב החישוב המרכזי?', 50);
+    degenerateLine('א. המעבד', 80);
+    degenerateLine('ב. הזיכרון', 105);
+    degenerateLine('ג. הדיסק', 130);
+    degenerateLine('ד. המסך', 155);
+
+    degenerateLine('שאלה מספר 2: מהו גודל המילה במעבד 8086?', 200);
+    degenerateLine('א. 16 ביט', 230);
+    degenerateLine('ב. 8 ביט', 255);
+    degenerateLine('ג. 32 ביט', 280);
+    degenerateLine('ד. 64 ביט', 305);
+
+    final bytes = Uint8List.fromList(document.saveSync());
+    document.dispose();
+    return bytes;
+  }
+
   /// An exam with one visual question (diagram between body and answers)
   /// and one pure-text question, plus one question whose answers are not
   /// extractable as text at all.

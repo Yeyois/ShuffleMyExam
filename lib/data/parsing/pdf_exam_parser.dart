@@ -31,7 +31,16 @@ abstract final class PdfExamParser {
       // bold "שאלה" run and the rest of its header, or an orphaned bullet
       // letter). Merge fragments whose vertical extents overlap enough,
       // then keep everything in reading order.
-      final merged = _mergeFragmentedLines(extracted);
+      //
+      // Exception: pages with *untrusted geometry* (most lines report the
+      // same x for every word also report y-extents that overlap rows that
+      // cannot physically overlap). Overlap-merging there combines
+      // fragments of DIFFERENT rows and scrambles answer lines — on such
+      // pages fragments are kept separate and only sorted by top.
+      final merged = _mergeFragmentedLines(
+        extracted,
+        skipMerging: _hasUntrustedGeometry(extracted),
+      );
 
       // Line text as reported by extractors is unreliable for RTL: word
       // order follows the content stream, not reading order. Reconstruct
@@ -110,11 +119,37 @@ abstract final class PdfExamParser {
     }
   }
 
+  /// True when the document's word x-positions are unusable: a large share
+  /// of its multi-word Hebrew lines report one x for every word. Such
+  /// documents come from one generator — the whole file is affected, and
+  /// content-stream order is the only reliable signal. LTR-only lines
+  /// (code snippets) are excluded; they always extract with sane order.
+  static bool _hasUntrustedGeometry(List<TextLine> extracted) {
+    var hebrewLines = 0;
+    var degenerate = 0;
+    for (final line in extracted) {
+      if (line.wordCollection.length < 3) continue;
+      if (!line.wordCollection.any((w) => BidiFixer.hasHebrew(w.text))) {
+        continue;
+      }
+      hebrewLines++;
+      if (_hasDegenerateGeometry(line.wordCollection)) degenerate++;
+    }
+    return hebrewLines > 0 && degenerate / hebrewLines > 0.4;
+  }
+
   /// Merges TextLine fragments belonging to one visual line: same page and
   /// vertical overlap of at least 40% of the shorter fragment (different
   /// font sizes on a shared baseline report different tops). Output is
   /// sorted in reading order (page, then top).
-  static List<_MergedLine> _mergeFragmentedLines(List<TextLine> extracted) {
+  ///
+  /// With [skipMerging] (untrusted geometry) lines are only sorted, never
+  /// merged — on such documents y-extents routinely overlap across
+  /// DIFFERENT rows, so any merge criterion combines unrelated fragments.
+  static List<_MergedLine> _mergeFragmentedLines(
+    List<TextLine> extracted, {
+    bool skipMerging = false,
+  }) {
     final byPage = <int, List<TextLine>>{};
     for (final line in extracted) {
       byPage.putIfAbsent(line.pageIndex, () => []).add(line);
@@ -126,7 +161,9 @@ abstract final class PdfExamParser {
         ..sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
       _MergedLine? current;
       for (final line in lines) {
-        if (current != null && _overlapsEnough(current.bounds, line.bounds)) {
+        if (!skipMerging &&
+            current != null &&
+            _overlapsEnough(current.bounds, line.bounds)) {
           current.absorb(line);
         } else {
           current = _MergedLine(line);
