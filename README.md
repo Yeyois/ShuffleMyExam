@@ -29,6 +29,14 @@ network calls, no PDFs leave your device.
 - **Local storage.** Parsed exams are saved (Hive), so heavy PDFs are
   processed only once.
 
+## Screenshots
+
+| Home | Processing | Practice |
+|:---:|:---:|:---:|
+| ![Home screen with an imported exam](docs/screenshots/home.png) | ![On-device parse summary](docs/screenshots/processing.png) | ![A question with shuffled answers](docs/screenshots/practice.png) |
+| **Reveal correct answer** | **Results** | **Dark mode** |
+| ![Reveal helper highlighting the correct answer in green](docs/screenshots/reveal.png) | ![Score and mistake breakdown](docs/screenshots/results.png) | ![Home screen in dark mode](docs/screenshots/home-dark.png) |
+
 ## Tech stack
 
 - **Flutter** (Dart), **Material 3**, global RTL.
