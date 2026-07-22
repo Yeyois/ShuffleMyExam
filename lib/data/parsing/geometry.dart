@@ -29,11 +29,32 @@ class PdfBox {
       );
 }
 
+/// A single word with its physical bounds on the page (points, top-left
+/// origin). [text] is the extractor's raw token — used only to tell an
+/// answer bullet ("א."/"ב.") apart from body words when carving out the
+/// text region to shuffle in place.
+class WordBox {
+  const WordBox({required this.text, required this.bounds});
+
+  final String text;
+  final PdfBox bounds;
+}
+
 /// A single extracted text line with its bounds on the page.
+///
+/// [words] carries the line's per-word geometry when known (answer lines
+/// need it to separate the fixed bullet marker from the swappable answer
+/// text); it is empty for synthesized lines such as coalesced headers.
 class LineBox {
-  const LineBox({required this.text, required this.pageIndex, required this.bounds});
+  const LineBox({
+    required this.text,
+    required this.pageIndex,
+    required this.bounds,
+    this.words = const [],
+  });
 
   final String text;
   final int pageIndex;
   final PdfBox bounds;
+  final List<WordBox> words;
 }

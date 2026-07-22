@@ -57,6 +57,12 @@ void main() {
       expect(exam.id, isNotEmpty);
       expect(exam.questions.map((q) => q.id).toSet(), hasLength(2),
           reason: 'question ids must be unique');
+
+      // The original PDF is retained so the exporter can shuffle it in place.
+      expect(exam.originalPdfPath, isNotNull);
+      expect(File(exam.originalPdfPath!).existsSync(), isTrue);
+      expect(File(exam.originalPdfPath!).lengthSync(),
+          File(pdfPath).lengthSync());
     });
 
     test('throws ExamParseException when no questions are found', () async {

@@ -68,6 +68,18 @@ abstract final class PdfExamParser {
               text: texts[i],
               pageIndex: merged[i].pageIndex,
               bounds: merged[i].bounds,
+              words: [
+                for (final w in merged[i].words)
+                  WordBox(
+                    text: w.text,
+                    bounds: PdfBox(
+                      left: w.bounds.left,
+                      top: w.bounds.top,
+                      width: w.bounds.width,
+                      height: w.bounds.height,
+                    ),
+                  ),
+              ],
             ),
       ]);
 
@@ -398,6 +410,15 @@ abstract final class PdfExamParser {
         pageIndex: pageIndex,
         pageWidth: pageWidth,
         pageHeight: pageHeight,
+        // Geometry for a format-preserving, in-place answer shuffle. Null
+        // when the answers can't be swapped cleanly (multi-line, unequal
+        // heights, or unusable word positions) — such questions are left
+        // untouched by the exporter.
+        answerTextBoxes: _computeAnswerTextBoxes(
+          extracted,
+          blockLines,
+          pageIndex,
+        ),
       );
     }
 
@@ -443,6 +464,100 @@ abstract final class PdfExamParser {
       fullBox: boxes.full,
       croppedBox: boxes.cropped,
     );
+  }
+
+  /// Max height difference (points) still treated as "same height" answer
+  /// rows. Rows further apart can't be swapped without vertical overlap.
+  static const _heightTolerance = 5.0;
+
+  // A word that is purely a bullet marker: a letter, a dot/paren, or the
+  // two joined ("א", "א.", "."). Used to peel the fixed bullet off an
+  // answer line so only the answer *text* region moves.
+  static final _bulletWord = RegExp(r'^\s*(?:[אבגד]\s*[.)]?|[.)])\s*$');
+
+  /// Per-answer text-region boxes (parallel to [extracted]) for an in-place
+  /// shuffle, or null if the question can't be shuffled cleanly.
+  ///
+  /// A question qualifies only when every answer is a single line, its
+  /// bullet marker can be split off from its text by word geometry, and all
+  /// answer rows share the same height (within [_heightTolerance]). The
+  /// returned box covers just the answer text — never the bullet — so the
+  /// א/ב/ג/ד markers stay put when the text regions are swapped.
+  static List<PdfBox>? _computeAnswerTextBoxes(
+    List<ExtractedAnswer> extracted,
+    List<LineBox> blockLines,
+    int pageIndex,
+  ) {
+    if (extracted.length < 2) return null;
+
+    final boxes = <PdfBox>[];
+    for (var k = 0; k < extracted.length; k++) {
+      final start = extracted[k].lineIndex;
+      final end = k + 1 < extracted.length
+          ? extracted[k + 1].lineIndex
+          : blockLines.length;
+      if (start < 0 || start >= blockLines.length) return null;
+
+      final line = blockLines[start];
+      // Answers spanning more than one line can't be region-swapped.
+      for (var li = start + 1; li < end; li++) {
+        if (blockLines[li].text.trim().isNotEmpty) return null;
+      }
+      // Cross-page answer rows share no coordinate space with the block.
+      if (line.pageIndex != pageIndex) return null;
+
+      final box = _answerTextBox(line);
+      if (box == null) return null;
+      boxes.add(box);
+    }
+
+    final h0 = boxes.first.height;
+    for (final b in boxes) {
+      if ((b.height - h0).abs() > _heightTolerance) return null;
+    }
+    return boxes;
+  }
+
+  /// The text region of a single answer [line], excluding its bullet, or
+  /// null when word geometry can't separate the two (missing words, all
+  /// words stacked at one x, or no body words left of the bullet).
+  static PdfBox? _answerTextBox(LineBox line) {
+    final words = line.words;
+    if (words.length < 2) return null;
+
+    // Degenerate geometry (every word reports the same x) gives no usable
+    // split between bullet and text.
+    var minLeft = words.first.bounds.left;
+    var maxLeft = minLeft;
+    for (final w in words) {
+      if (w.bounds.left < minLeft) minLeft = w.bounds.left;
+      if (w.bounds.left > maxLeft) maxLeft = w.bounds.left;
+    }
+    if (maxLeft - minLeft < 1.0) return null;
+
+    // In an RTL answer row the bullet sits at the right edge (largest x).
+    final bulletLefts = [
+      for (final w in words)
+        if (_bulletWord.hasMatch(w.text)) w.bounds.left,
+    ];
+    if (bulletLefts.isEmpty) return null;
+    final bulletLeft = bulletLefts.reduce((a, b) => a > b ? a : b);
+
+    // Body words are everything left of the bullet cluster.
+    final body = [for (final w in words) if (w.bounds.left < bulletLeft) w];
+    if (body.isEmpty) return null;
+
+    var left = body.first.bounds.left;
+    var top = body.first.bounds.top;
+    var right = body.first.bounds.right;
+    var bottom = body.first.bounds.bottom;
+    for (final w in body) {
+      if (w.bounds.left < left) left = w.bounds.left;
+      if (w.bounds.top < top) top = w.bounds.top;
+      if (w.bounds.right > right) right = w.bounds.right;
+      if (w.bounds.bottom > bottom) bottom = w.bounds.bottom;
+    }
+    return PdfBox(left: left, top: top, width: right - left, height: bottom - top);
   }
 }
 

@@ -31,6 +31,21 @@ double bulletLineTop(List<int> bytes, String bullet, {double after = 0}) {
   fail('no line starting with $bullet found');
 }
 
+/// The physical left-X of the [bullet] marker word on its answer line.
+double bulletWordLeft(List<int> bytes, String bullet) {
+  final document = PdfDocument(inputBytes: bytes);
+  try {
+    for (final line in PdfTextExtractor(document).extractTextLines()) {
+      for (final w in line.wordCollection) {
+        if (w.text.trim() == bullet) return w.bounds.left;
+      }
+    }
+  } finally {
+    document.dispose();
+  }
+  fail('no word "$bullet" found');
+}
+
 void main() {
   group('PdfExamParser — pure text exam', () {
     test('finds all questions with bidi-corrected text and answers', () {
@@ -53,6 +68,31 @@ void main() {
       expect(q2.answers.first.text, 'ALU הוא הרכיב הנכון');
       expect(q2.answers.first.isOriginalCorrect, isTrue);
       expect(q2.answers, hasLength(4));
+    });
+
+    test('captures per-answer text boxes that exclude the bullet marker', () {
+      final bytes = PdfFixtures.textOnlyExam();
+      final structure = PdfExamParser.parseBytes(bytes);
+      final q1 = structure.questions[0];
+
+      final boxes = q1.answerTextBoxes;
+      expect(boxes, isNotNull,
+          reason: 'single-line, equal-height answers are shufflable in place');
+      expect(boxes, hasLength(4));
+
+      // All answer rows share one height (within tolerance) so their text
+      // regions can be swapped without vertical overlap.
+      final h0 = boxes!.first.height;
+      for (final b in boxes) {
+        expect((b.height - h0).abs(), lessThan(5.0));
+        expect(b.width, greaterThan(0));
+      }
+
+      // The box must stop left of the "א." bullet so the marker stays put
+      // when the answer text is moved.
+      final alephLeft = bulletWordLeft(bytes, 'א.');
+      expect(boxes.first.right, lessThanOrEqualTo(alephLeft + 0.5),
+          reason: 'answer text region must not cover its bullet');
     });
   });
 
@@ -146,6 +186,11 @@ void main() {
       expect(q2.isShufflable, isTrue);
       expect(q2.answers.map((a) => a.text).toList(),
           ['16 ביט', '8 ביט', '32 ביט', '64 ביט']);
+
+      // Degenerate word positions can't separate bullet from text, so these
+      // questions carry no swap geometry — the exporter leaves them as-is.
+      expect(q1.answerTextBoxes, isNull);
+      expect(q2.answerTextBoxes, isNull);
     });
 
     test('question drafts survive isolate-style JSON round-trip', () {
