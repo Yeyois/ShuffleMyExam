@@ -47,17 +47,24 @@ void main() {
       expect(again.shuffledAnswers['q1'], same(state.shuffledAnswers['q1']));
     });
 
-    test('correct answer is never presented first (all seeds)', () {
+    test('fair shuffle: correct answer may be presented in any position', () {
+      var sawCorrectFirst = false;
       for (var seed = 0; seed < 100; seed++) {
         PracticeSessionController.randomFactory = () => Random(seed);
         final container = ProviderContainer();
         final state = container.read(practiceSessionProvider(mixedExam()));
         for (final answers in state.shuffledAnswers.values) {
-          expect(answers.first.isOriginalCorrect, isFalse,
+          // Every session is a valid permutation of that question's answers.
+          expect(answers.where((a) => a.isOriginalCorrect), hasLength(1),
               reason: 'seed $seed');
+          if (answers.first.isOriginalCorrect) sawCorrectFirst = true;
         }
         container.dispose();
       }
+      // Proves no derangement is applied: the correct answer does land first
+      // for at least some seeds.
+      expect(sawCorrectFirst, isTrue,
+          reason: 'a fair shuffle must sometimes leave the correct answer first');
     });
 
     test('selectAnswer, toggleReveal and toggleFullImage update state', () {

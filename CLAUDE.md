@@ -38,7 +38,7 @@ Don't let the agent write the entire app in one pass. A project like this (Flutt
 - **Commit after each complete, working unit of work** (not after every line, but not only at the end of the day either). Example unit of work: "data model + tests", "Bidi algorithm + test", "Home screen + DB connection".
 - **Commit messages in Conventional Commits format:**
   - `feat: add Bidi reversal for Hebrew RTL text`
-  - `fix: correct answer shuffling to exclude original index`
+  - `fix: use a fair shuffle so answer order gives nothing away`
   - `test: add unit tests for question regex detection`
   - `refactor: extract PDF parsing into isolated service`
   - `chore: update dependencies`
