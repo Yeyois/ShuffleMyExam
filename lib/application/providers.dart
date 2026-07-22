@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/export/shuffled_pdf_export_service.dart';
 import '../data/parsing/exam_import_service.dart';
 import '../domain/models/exam.dart';
 import '../domain/repositories/exam_repository.dart';
@@ -17,6 +18,9 @@ final imagesRootDirProvider = Provider<String>(
 
 final examImportServiceProvider =
     Provider<ExamImportService>((ref) => const ExamImportService());
+
+final shuffledPdfExportServiceProvider =
+    Provider<ShuffledPdfExportService>((ref) => const ShuffledPdfExportService());
 
 /// All saved exams, newest first.
 final examsProvider = FutureProvider<List<Exam>>(

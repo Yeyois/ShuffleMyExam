@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/import_controller.dart';
 import '../../core/constants/app_strings.dart';
+import '../widgets/download_shuffled_pdf_button.dart';
 import 'practice_screen.dart';
 
 /// Shown while the isolate parses the picked PDF; then a success summary
@@ -54,6 +55,8 @@ class ProcessingScreen extends ConsumerWidget {
                     icon: const Icon(Icons.play_arrow),
                     label: const Text(AppStrings.startPractice),
                   ),
+                  const SizedBox(height: 12),
+                  DownloadShuffledPdfButton(exam: exam),
                 ],
               ),
             ImportFailure(:final message) => Column(

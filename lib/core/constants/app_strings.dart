@@ -23,6 +23,12 @@ abstract final class AppStrings {
   static const extractionFailed = 'חילוץ המבחן נכשל';
   static const backHome = 'חזרה למסך הבית';
 
+  // Shuffled-PDF export.
+  static const downloadShuffledPdf = 'הורדת מבחן מעורבב (PDF)';
+  static const preparingPdf = 'מכינים את הקובץ...';
+  static const exportFailed = 'יצירת הקובץ נכשלה';
+  static const sharePdfSubject = 'מבחן מעורבב';
+
   // Practice screen.
   static const revealCorrectAnswer = 'הצג תשובה נכונה';
   static const revealOriginalAnswers = 'הצג פתרון מקורי';
