@@ -371,9 +371,17 @@ abstract final class PdfExamParser {
       final reconstructed =
           TrailingBulletReconstructor.reconstruct(blockLines);
       if (reconstructed != null) {
+        // Truncate the body above the answers so it doesn't re-leak them
+        // (trailing-bullet layouts have no leading bullet to cut at).
+        final body = [
+          if (remainder.isNotEmpty) remainder,
+          for (final l in blockLines)
+            if (l.bounds.top < reconstructed.firstAnswerTop) l.text,
+        ].map(_sanitize).where((t) => t.trim().isNotEmpty).join('\n').trim();
+
         return ParsedQuestionDraft(
-          questionText: questionText,
-          answers: reconstructed,
+          questionText: body.isEmpty ? questionText : body,
+          answers: reconstructed.answers,
           isShufflable: true,
           pageIndex: pageIndex,
           pageWidth: pageWidth,

@@ -34,9 +34,12 @@ abstract final class TrailingBulletReconstructor {
   /// Rows within this many points share a baseline (same visual line).
   static const _sameRow = 5.0;
 
-  /// Attempts reconstruction. Returns answers in letter order (first =
-  /// correct) or null when the pattern is not confidently present.
-  static List<Answer>? reconstruct(List<LineBox> blockLines) {
+  /// Attempts reconstruction. Returns the answers in letter order (first =
+  /// correct) plus [firstAnswerTop] — the page-Y where the answers begin,
+  /// so the caller can truncate the question body above it and not re-leak
+  /// the answers. Returns null when the pattern is not confidently present.
+  static ({List<Answer> answers, double firstAnswerTop})? reconstruct(
+      List<LineBox> blockLines) {
     final lines = [...blockLines]
       ..sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
 
@@ -127,7 +130,7 @@ abstract final class TrailingBulletReconstructor {
     // Sanity: at least 3 answers and exactly one flagged correct (the א).
     if (answers.length < 3) return null;
     if (answers.where((a) => a.isOriginalCorrect).length != 1) return null;
-    return answers;
+    return (answers: answers, firstAnswerTop: lines[anchors.first].bounds.top);
   }
 
   static String? _markerLetter(String text) {

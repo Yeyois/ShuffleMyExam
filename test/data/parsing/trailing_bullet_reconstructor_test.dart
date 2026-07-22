@@ -30,11 +30,12 @@ void main() {
         line('בין תהליכים', 173.6), // ד continuation
       ];
 
-      final answers = TrailingBulletReconstructor.reconstruct(block);
+      final result = TrailingBulletReconstructor.reconstruct(block);
 
-      expect(answers, isNotNull);
+      expect(result, isNotNull);
+      final answers = result!.answers;
       expect(answers, hasLength(4));
-      expect(answers![0].text, 'הוא חייב להיות ממומש לשינוי');
+      expect(answers[0].text, 'הוא חייב להיות ממומש לשינוי');
       expect(answers[0].isOriginalCorrect, isTrue);
       expect(answers[1].text, 'הוא צריך להיות פשוט ולאימות');
       expect(answers[1].isOriginalCorrect, isFalse);
@@ -42,6 +43,8 @@ void main() {
       // ד keeps its text, with the leading ". " stripped.
       expect(answers[3].text, 'הוא בין היתר פועל בין תהליכים');
       expect(answers.where((a) => a.isOriginalCorrect), hasLength(1));
+      // The answers begin at the first answer's row (א text, top 116.8).
+      expect(result.firstAnswerTop, 116.8);
     });
 
     test('reconstructs three answers when there is no letterless 4th', () {
@@ -54,9 +57,11 @@ void main() {
         line('. ג', 140.6),
       ];
 
-      final answers = TrailingBulletReconstructor.reconstruct(block);
+      final result = TrailingBulletReconstructor.reconstruct(block);
+      expect(result, isNotNull);
+      final answers = result!.answers;
       expect(answers, hasLength(3));
-      expect(answers![0].text, 'תשובה ראשונה');
+      expect(answers[0].text, 'תשובה ראשונה');
       expect(answers[0].isOriginalCorrect, isTrue);
       expect(answers[2].text, 'תשובה שלישית');
     });
