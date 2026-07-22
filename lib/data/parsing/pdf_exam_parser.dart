@@ -10,6 +10,7 @@ import 'geometry.dart';
 import 'parsed_structures.dart';
 import 'question_detector.dart';
 import 'smart_cropper.dart';
+import 'trailing_bullet_reconstructor.dart';
 
 /// Pure-Dart structural parser for Zero-Exam PDFs.
 ///
@@ -37,9 +38,10 @@ abstract final class PdfExamParser {
       // cannot physically overlap). Overlap-merging there combines
       // fragments of DIFFERENT rows and scrambles answer lines — on such
       // pages fragments are kept separate and only sorted by top.
+      final untrustedGeometry = _hasUntrustedGeometry(extracted);
       final merged = _mergeFragmentedLines(
         extracted,
-        skipMerging: _hasUntrustedGeometry(extracted),
+        skipMerging: untrustedGeometry,
       );
 
       // Line text as reported by extractors is unreliable for RTL: word
@@ -109,6 +111,7 @@ abstract final class PdfExamParser {
           blockLines: lines.sublist(start.lineIndex + 1, end),
           pageSizes: pageSizes,
           nextStartTop: nextStartTop,
+          untrustedGeometry: untrustedGeometry,
         );
         if (draft != null) questions.add(draft);
       }
@@ -318,6 +321,7 @@ abstract final class PdfExamParser {
     required List<LineBox> blockLines,
     required List<Size> pageSizes,
     double? nextStartTop,
+    bool untrustedGeometry = false,
   }) {
     final pageIndex = startLine.pageIndex;
     // Geometry only makes sense within the starting page.
@@ -356,6 +360,35 @@ abstract final class PdfExamParser {
     final pageSize = pageSizes[pageIndex];
     final pageWidth = pageSize.width;
     final pageHeight = pageSize.height;
+
+    // Last resort before falling back to an image: on untrusted-geometry
+    // documents, leading-bullet extraction fails when bullets are trailing
+    // markers ("text ... . א"). Try that layout — but only when normal
+    // extraction found nothing, and only when it yields a confident,
+    // integrity-preserving result (א flagged correct). Otherwise stay
+    // visual.
+    if (isVisual && untrustedGeometry && extracted.length < 2) {
+      final reconstructed =
+          TrailingBulletReconstructor.reconstruct(blockLines);
+      if (reconstructed != null) {
+        // Truncate the body above the answers so it doesn't re-leak them
+        // (trailing-bullet layouts have no leading bullet to cut at).
+        final body = [
+          if (remainder.isNotEmpty) remainder,
+          for (final l in blockLines)
+            if (l.bounds.top < reconstructed.firstAnswerTop) l.text,
+        ].map(_sanitize).where((t) => t.trim().isNotEmpty).join('\n').trim();
+
+        return ParsedQuestionDraft(
+          questionText: body.isEmpty ? questionText : body,
+          answers: reconstructed.answers,
+          isShufflable: true,
+          pageIndex: pageIndex,
+          pageWidth: pageWidth,
+          pageHeight: pageHeight,
+        );
+      }
+    }
 
     if (!isVisual) {
       return ParsedQuestionDraft(
