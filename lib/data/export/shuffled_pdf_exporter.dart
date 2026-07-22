@@ -50,10 +50,10 @@ const double _renderScale = 2.5;
 /// [ShuffledPdfParams.originalPdfPath] and returns the PDF bytes.
 ///
 /// Each original page is rasterized (so no underlying answer text remains to
-/// cheat from) and, for every cleanly-swappable text question, the answer
-/// text regions are moved between slots while the א/ב/ג/ד bullets stay put.
-/// Visual questions and answers that can't be swapped without overlapping
-/// are left exactly as they were. When
+/// cheat from) and, for every reorderable text question, the answer bands
+/// are restacked in a new order and the א/ב/ג/ד bullets restamped in
+/// sequence from the original glyph pixels. Visual questions and questions
+/// without reorder geometry are left exactly as they were. When
 /// [ShuffledPdfParams.includeAnswerKey] is set, a final "מפתח תשובות" page
 /// lists the correct letter per question.
 ///
@@ -71,7 +71,7 @@ Future<Uint8List> buildShuffledExamPdf(ShuffledPdfParams params) async {
   final plan = planInPlaceShuffle(structure, random: rng);
 
   // Group the in-place redraws by page.
-  final drawsByPage = <int, List<QuestionDraw>>{};
+  final drawsByPage = <int, List<QuestionReorder>>{};
   for (final q in plan.questions) {
     drawsByPage.putIfAbsent(q.pageIndex, () => []).add(q);
   }
@@ -104,12 +104,12 @@ Future<Uint8List> buildShuffledExamPdf(ShuffledPdfParams params) async {
   return result;
 }
 
-/// Rasterizes [page], applies any answer swaps, and appends the result as a
+/// Rasterizes [page], reorders any answer bands, and appends the result as a
 /// same-size page in [output].
 Future<void> _composePage({
   required PdfDocument output,
   required pdfx.PdfPage page,
-  required List<QuestionDraw> questions,
+  required List<QuestionReorder> questions,
 }) async {
   final pageW = page.width;
   final pageH = page.height;
@@ -122,16 +122,19 @@ Future<void> _composePage({
   );
   if (baseImage == null) return;
 
-  // Capture every source answer region from the clean original before we
-  // touch the output page.
-  final crops = <QuestionDraw, List<PdfBitmap>>{};
+  // Capture every answer band and every sequential bullet glyph from the
+  // clean original before we touch the output page.
+  final bandCrops = <QuestionReorder, List<PdfBitmap>>{};
+  final bulletCrops = <QuestionReorder, List<PdfBitmap>>{};
   for (final q in questions) {
-    final captured = <PdfBitmap>[];
-    for (final draw in q.answers) {
-      final img = await _renderCrop(page, draw.source, pageW, pageH);
-      captured.add(PdfBitmap(img));
-    }
-    crops[q] = captured;
+    bandCrops[q] = [
+      for (final b in q.bands)
+        PdfBitmap(await _renderCrop(page, b.source, pageW, pageH)),
+    ];
+    bulletCrops[q] = [
+      for (final s in q.bullets)
+        PdfBitmap(await _renderCrop(page, s.source, pageW, pageH)),
+    ];
   }
 
   output.pageSettings.margins.all = 0;
@@ -142,20 +145,28 @@ Future<void> _composePage({
   g.drawImage(PdfBitmap(baseImage.bytes), Rect.fromLTWH(0, 0, pageW, pageH));
 
   for (final q in questions) {
-    // Clear every original answer region first, so a source crop that is
-    // slightly taller than its slot can't be erased by a later white-out.
-    for (final draw in q.answers) {
-      final c = draw.clear;
+    // Clear the whole answers region, then restack the reordered bands.
+    final r = q.region;
+    g.drawRectangle(
+      brush: PdfBrushes.white,
+      bounds: Rect.fromLTWH(r.left - 1, r.top - 1, r.width + 2, r.height + 2),
+    );
+    final bands = bandCrops[q]!;
+    for (var i = 0; i < q.bands.length; i++) {
+      final t = q.bands[i].target;
+      g.drawImage(bands[i], Rect.fromLTWH(t.left, t.top, t.width, t.height));
+    }
+    // Restamp bullets in sequence over the moved bands.
+    final bullets = bulletCrops[q]!;
+    for (var i = 0; i < q.bullets.length; i++) {
+      final s = q.bullets[i];
       g.drawRectangle(
         brush: PdfBrushes.white,
-        // Inflate away from the (untouched) bullet on the right only.
-        bounds: Rect.fromLTWH(c.left - 1, c.top - 1, c.width + 1, c.height + 2),
+        bounds: Rect.fromLTWH(
+            s.clear.left - 1, s.clear.top - 1, s.clear.width + 2, s.clear.height + 2),
       );
-    }
-    final captured = crops[q]!;
-    for (var i = 0; i < q.answers.length; i++) {
-      final t = q.answers[i].target;
-      g.drawImage(captured[i], Rect.fromLTWH(t.left, t.top, t.width, t.height));
+      final t = s.target;
+      g.drawImage(bullets[i], Rect.fromLTWH(t.left, t.top, t.width, t.height));
     }
   }
 }

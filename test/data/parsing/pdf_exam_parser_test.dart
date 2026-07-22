@@ -70,29 +70,33 @@ void main() {
       expect(q2.answers, hasLength(4));
     });
 
-    test('captures per-answer text boxes that exclude the bullet marker', () {
+    test('captures tiling answer bands and their bullet glyph boxes', () {
       final bytes = PdfFixtures.textOnlyExam();
       final structure = PdfExamParser.parseBytes(bytes);
       final q1 = structure.questions[0];
 
-      final boxes = q1.answerTextBoxes;
-      expect(boxes, isNotNull,
-          reason: 'single-line, equal-height answers are shufflable in place');
-      expect(boxes, hasLength(4));
+      final bands = q1.answerBands;
+      final bullets = q1.answerBullets;
+      expect(bands, isNotNull, reason: 'four answers → reorderable in place');
+      expect(bands, hasLength(4));
+      expect(bullets, hasLength(4));
 
-      // All answer rows share one height (within tolerance) so their text
-      // regions can be swapped without vertical overlap.
-      final h0 = boxes!.first.height;
-      for (final b in boxes) {
-        expect((b.height - h0).abs(), lessThan(5.0));
-        expect(b.width, greaterThan(0));
+      // Bands tile the region: each starts where the previous ends, no gaps
+      // or overlaps, so they can be restacked without reflow.
+      for (var i = 1; i < bands!.length; i++) {
+        expect(bands[i].top, closeTo(bands[i - 1].bottom, 0.01));
+        expect(bands[i].left, bands.first.left);
+        expect(bands[i].width, bands.first.width);
       }
 
-      // The box must stop left of the "א." bullet so the marker stays put
-      // when the answer text is moved.
+      // Each bullet glyph sits at the right edge of its band and aligns with
+      // the detected "א." position for the first answer.
       final alephLeft = bulletWordLeft(bytes, 'א.');
-      expect(boxes.first.right, lessThanOrEqualTo(alephLeft + 0.5),
-          reason: 'answer text region must not cover its bullet');
+      expect(bullets!.first.left, closeTo(alephLeft, 1.0));
+      for (var i = 0; i < 4; i++) {
+        expect(bullets[i].top, greaterThanOrEqualTo(bands[i].top - 0.5));
+        expect(bullets[i].bottom, lessThanOrEqualTo(bands[i].bottom + 0.5));
+      }
     });
   });
 
@@ -187,10 +191,10 @@ void main() {
       expect(q2.answers.map((a) => a.text).toList(),
           ['16 ביט', '8 ביט', '32 ביט', '64 ביט']);
 
-      // Degenerate word positions can't separate bullet from text, so these
-      // questions carry no swap geometry — the exporter leaves them as-is.
-      expect(q1.answerTextBoxes, isNull);
-      expect(q2.answerTextBoxes, isNull);
+      // Degenerate word positions can't locate the bullet glyph, so these
+      // questions carry no reorder geometry — the exporter leaves them as-is.
+      expect(q1.answerBands, isNull);
+      expect(q2.answerBands, isNull);
     });
 
     test('question drafts survive isolate-style JSON round-trip', () {

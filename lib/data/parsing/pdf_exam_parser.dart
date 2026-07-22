@@ -403,6 +403,17 @@ abstract final class PdfExamParser {
     }
 
     if (!isVisual) {
+      // Geometry for a format-preserving, in-place answer shuffle: each
+      // answer's full vertical band plus its bullet glyph. Null when the
+      // answers can't be reordered (single answer, cross-page, or an
+      // unlocatable bullet) — such questions are left untouched.
+      final bands = _computeAnswerBands(
+        extracted,
+        blockLines,
+        pageIndex,
+        nextStartTop,
+        pageHeight,
+      );
       return ParsedQuestionDraft(
         questionText: questionText,
         answers: extracted.map((e) => e.answer).toList(),
@@ -410,15 +421,8 @@ abstract final class PdfExamParser {
         pageIndex: pageIndex,
         pageWidth: pageWidth,
         pageHeight: pageHeight,
-        // Geometry for a format-preserving, in-place answer shuffle. Null
-        // when the answers can't be swapped cleanly (multi-line, unequal
-        // heights, or unusable word positions) — such questions are left
-        // untouched by the exporter.
-        answerTextBoxes: _computeAnswerTextBoxes(
-          extracted,
-          blockLines,
-          pageIndex,
-        ),
+        answerBands: bands?.bands,
+        answerBullets: bands?.bullets,
       );
     }
 
@@ -466,67 +470,142 @@ abstract final class PdfExamParser {
     );
   }
 
-  /// Max height difference (points) still treated as "same height" answer
-  /// rows. Rows further apart can't be swapped without vertical overlap.
-  static const _heightTolerance = 5.0;
-
   // A word that is purely a bullet marker: a letter, a dot/paren, or the
-  // two joined ("א", "א.", "."). Used to peel the fixed bullet off an
-  // answer line so only the answer *text* region moves.
+  // two joined ("א", "א.", "."). Used to locate the bullet glyph at the
+  // right edge of an answer's first line.
   static final _bulletWord = RegExp(r'^\s*(?:[אבגד]\s*[.)]?|[.)])\s*$');
 
-  /// Per-answer text-region boxes (parallel to [extracted]) for an in-place
-  /// shuffle, or null if the question can't be shuffled cleanly.
+  /// Breathing room (points) added below the last answer so a wrapped final
+  /// line is never clipped by the band's bottom.
+  static const _bandBottomPadding = 2.0;
+
+  /// Per-answer vertical bands and bullet-glyph boxes (both parallel to
+  /// [extracted]) for a format-preserving, in-place reorder, or null when
+  /// the question can't be reordered.
   ///
-  /// A question qualifies only when every answer is a single line, its
-  /// bullet marker can be split off from its text by word geometry, and all
-  /// answer rows share the same height (within [_heightTolerance]). The
-  /// returned box covers just the answer text — never the bullet — so the
-  /// א/ב/ג/ד markers stay put when the text regions are swapped.
-  static List<PdfBox>? _computeAnswerTextBoxes(
+  /// Each band runs from an answer's bullet line down to the next answer's
+  /// bullet line (the last runs to the bottom of its wrapped content), so
+  /// the bands tile the answers region with no gaps or overlaps and can be
+  /// restacked in any order without reflow. The bands share one horizontal
+  /// window (the union of every answer line's extent) so they cover each
+  /// other's footprint exactly. Handles multi-line answers of unequal
+  /// height; the exporter reorders the bands and restamps the bullets in
+  /// sequence from the original pixels.
+  ///
+  /// Returns null when there are fewer than two answers, an answer's bullet
+  /// line is on another page, the bullet tops aren't strictly increasing, or
+  /// a bullet glyph can't be located.
+  static ({List<PdfBox> bands, List<PdfBox> bullets})? _computeAnswerBands(
     List<ExtractedAnswer> extracted,
     List<LineBox> blockLines,
     int pageIndex,
+    double? nextStartTop,
+    double pageHeight,
   ) {
     if (extracted.length < 2) return null;
 
-    final boxes = <PdfBox>[];
-    for (var k = 0; k < extracted.length; k++) {
-      final start = extracted[k].lineIndex;
-      final end = k + 1 < extracted.length
-          ? extracted[k + 1].lineIndex
-          : blockLines.length;
-      if (start < 0 || start >= blockLines.length) return null;
+    // Line bounds are unreliable on some RTL PDFs (the extractor reports a
+    // line's left > right); word bounds are consistent, so all geometry here
+    // is derived from words.
+    final bulletTops = <double>[];
+    final bulletBoxes = <PdfBox>[];
 
-      final line = blockLines[start];
-      // Answers spanning more than one line can't be region-swapped.
-      for (var li = start + 1; li < end; li++) {
-        if (blockLines[li].text.trim().isNotEmpty) return null;
-      }
-      // Cross-page answer rows share no coordinate space with the block.
+    final firstBulletLine = extracted.first.lineIndex;
+    for (var k = 0; k < extracted.length; k++) {
+      final li = extracted[k].lineIndex;
+      if (li < 0 || li >= blockLines.length) return null;
+      final line = blockLines[li];
       if (line.pageIndex != pageIndex) return null;
 
-      final box = _answerTextBox(line);
-      if (box == null) return null;
-      boxes.add(box);
+      final bullet = _bulletGlyphBox(line);
+      final env = _wordEnvelope(line);
+      if (bullet == null || env == null) return null;
+      bulletBoxes.add(bullet);
+      bulletTops.add(env.top);
     }
 
-    final h0 = boxes.first.height;
-    for (final b in boxes) {
-      if ((b.height - h0).abs() > _heightTolerance) return null;
+    // Horizontal window: the union of every answer line (bullets + wrapped
+    // continuation) on this page, from the first bullet onward.
+    var regionLeft = double.infinity;
+    var regionRight = double.negativeInfinity;
+    for (var li = firstBulletLine; li < blockLines.length; li++) {
+      final line = blockLines[li];
+      if (line.pageIndex != pageIndex) continue;
+      final env = _wordEnvelope(line);
+      if (env == null) continue;
+      if (env.left < regionLeft) regionLeft = env.left;
+      if (env.right > regionRight) regionRight = env.right;
     }
-    return boxes;
+    if (!regionLeft.isFinite ||
+        !regionRight.isFinite ||
+        regionRight <= regionLeft) {
+      return null;
+    }
+
+    // Bullet tops must be strictly increasing for the bands to tile.
+    for (var i = 1; i < bulletTops.length; i++) {
+      if (bulletTops[i] <= bulletTops[i - 1]) return null;
+    }
+
+    // Bottom of the last answer's content on this page.
+    var regionBottom = double.negativeInfinity;
+    for (var li = extracted.last.lineIndex; li < blockLines.length; li++) {
+      final line = blockLines[li];
+      if (line.pageIndex != pageIndex) continue;
+      final env = _wordEnvelope(line);
+      if (env != null && env.bottom > regionBottom) regionBottom = env.bottom;
+    }
+    if (!regionBottom.isFinite) return null;
+    regionBottom += _bandBottomPadding;
+    // Never spill past the next question or the page.
+    if (nextStartTop != null && nextStartTop < regionBottom) {
+      regionBottom = nextStartTop;
+    }
+    if (regionBottom > pageHeight) regionBottom = pageHeight;
+    if (regionBottom <= bulletTops.last) return null;
+
+    final bands = <PdfBox>[];
+    for (var i = 0; i < bulletTops.length; i++) {
+      final top = bulletTops[i];
+      final bottom =
+          i + 1 < bulletTops.length ? bulletTops[i + 1] : regionBottom;
+      if (bottom <= top) return null;
+      bands.add(PdfBox(
+        left: regionLeft,
+        top: top,
+        width: regionRight - regionLeft,
+        height: bottom - top,
+      ));
+    }
+    return (bands: bands, bullets: bulletBoxes);
   }
 
-  /// The text region of a single answer [line], excluding its bullet, or
-  /// null when word geometry can't separate the two (missing words, all
-  /// words stacked at one x, or no body words left of the bullet).
-  static PdfBox? _answerTextBox(LineBox line) {
-    final words = line.words;
-    if (words.length < 2) return null;
+  /// The word-geometry envelope (left/top/right/bottom over all words) of a
+  /// [line], or null when it has no words. Preferred over `line.bounds`,
+  /// which some RTL PDFs report inverted.
+  static ({double left, double top, double right, double bottom})?
+      _wordEnvelope(LineBox line) {
+    if (line.words.isEmpty) return null;
+    var left = double.infinity;
+    var top = double.infinity;
+    var right = double.negativeInfinity;
+    var bottom = double.negativeInfinity;
+    for (final w in line.words) {
+      if (w.bounds.left < left) left = w.bounds.left;
+      if (w.bounds.top < top) top = w.bounds.top;
+      if (w.bounds.right > right) right = w.bounds.right;
+      if (w.bounds.bottom > bottom) bottom = w.bounds.bottom;
+    }
+    return (left: left, top: top, right: right, bottom: bottom);
+  }
 
-    // Degenerate geometry (every word reports the same x) gives no usable
-    // split between bullet and text.
+  /// The bullet-glyph box on an answer's first [line] — the rightmost word
+  /// that is a bare bullet marker. Null when there are no words, positions
+  /// are degenerate (all one x), or no bullet word is present.
+  static PdfBox? _bulletGlyphBox(LineBox line) {
+    final words = line.words;
+    if (words.isEmpty) return null;
+
     var minLeft = words.first.bounds.left;
     var maxLeft = minLeft;
     for (final w in words) {
@@ -535,29 +614,14 @@ abstract final class PdfExamParser {
     }
     if (maxLeft - minLeft < 1.0) return null;
 
-    // In an RTL answer row the bullet sits at the right edge (largest x).
-    final bulletLefts = [
-      for (final w in words)
-        if (_bulletWord.hasMatch(w.text)) w.bounds.left,
-    ];
-    if (bulletLefts.isEmpty) return null;
-    final bulletLeft = bulletLefts.reduce((a, b) => a > b ? a : b);
-
-    // Body words are everything left of the bullet cluster.
-    final body = [for (final w in words) if (w.bounds.left < bulletLeft) w];
-    if (body.isEmpty) return null;
-
-    var left = body.first.bounds.left;
-    var top = body.first.bounds.top;
-    var right = body.first.bounds.right;
-    var bottom = body.first.bounds.bottom;
-    for (final w in body) {
-      if (w.bounds.left < left) left = w.bounds.left;
-      if (w.bounds.top < top) top = w.bounds.top;
-      if (w.bounds.right > right) right = w.bounds.right;
-      if (w.bounds.bottom > bottom) bottom = w.bounds.bottom;
+    WordBox? bullet;
+    for (final w in words) {
+      if (_bulletWord.hasMatch(w.text) &&
+          (bullet == null || w.bounds.left > bullet.bounds.left)) {
+        bullet = w;
+      }
     }
-    return PdfBox(left: left, top: top, width: right - left, height: bottom - top);
+    return bullet?.bounds;
   }
 }
 

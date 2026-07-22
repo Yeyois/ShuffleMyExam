@@ -13,7 +13,8 @@ class ParsedQuestionDraft {
     required this.pageHeight,
     this.fullBox,
     this.croppedBox,
-    this.answerTextBoxes,
+    this.answerBands,
+    this.answerBullets,
   });
 
   final String questionText;
@@ -30,10 +31,19 @@ class ParsedQuestionDraft {
   final PdfBox? fullBox;
   final PdfBox? croppedBox;
 
-  /// Per-answer text-region boxes (parallel to [answers]), in PDF page
-  /// points, for a format-preserving in-place shuffle. Null when the
-  /// question can't be shuffled cleanly and must be left untouched.
-  final List<PdfBox>? answerTextBoxes;
+  /// For a format-preserving in-place shuffle: the full vertical band of
+  /// each answer (bullet line through its last wrapped line), parallel to
+  /// [answers], in PDF page points. The bands tile the answers region
+  /// contiguously so they can be reordered without reflow. Null (together
+  /// with [answerBullets]) when the question can't be reordered and must be
+  /// left untouched.
+  final List<PdfBox>? answerBands;
+
+  /// The bullet-glyph box (א./ב./…) on each answer's first line, parallel to
+  /// [answers]. Used to lift the original bullet pixels and restamp them in
+  /// sequence after the bands are reordered. Non-null exactly when
+  /// [answerBands] is.
+  final List<PdfBox>? answerBullets;
 
   Map<String, dynamic> toJson() => {
         'questionText': questionText,
@@ -44,8 +54,8 @@ class ParsedQuestionDraft {
         'pageHeight': pageHeight,
         'fullBox': fullBox?.toJson(),
         'croppedBox': croppedBox?.toJson(),
-        'answerTextBoxes':
-            answerTextBoxes?.map((b) => b.toJson()).toList(),
+        'answerBands': answerBands?.map((b) => b.toJson()).toList(),
+        'answerBullets': answerBullets?.map((b) => b.toJson()).toList(),
       };
 
   factory ParsedQuestionDraft.fromJson(Map<String, dynamic> json) =>
@@ -64,7 +74,10 @@ class ParsedQuestionDraft {
         croppedBox: json['croppedBox'] == null
             ? null
             : PdfBox.fromJson(json['croppedBox'] as Map<String, dynamic>),
-        answerTextBoxes: (json['answerTextBoxes'] as List<dynamic>?)
+        answerBands: (json['answerBands'] as List<dynamic>?)
+            ?.map((b) => PdfBox.fromJson(b as Map<String, dynamic>))
+            .toList(),
+        answerBullets: (json['answerBullets'] as List<dynamic>?)
             ?.map((b) => PdfBox.fromJson(b as Map<String, dynamic>))
             .toList(),
       );
