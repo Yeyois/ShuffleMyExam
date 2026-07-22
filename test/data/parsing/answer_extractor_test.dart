@@ -106,12 +106,18 @@ void main() {
       Answer(id: '4', text: 'ד', isOriginalCorrect: false),
     ];
 
-    test('never leaves the correct answer in the first position', () {
+    test('fair shuffle: the correct answer can land in any position', () {
+      final firstOutcomes = <bool>{};
       for (var seed = 0; seed < 200; seed++) {
         final shuffled = shuffleAnswers(answers, random: Random(seed));
-        expect(shuffled.first.isOriginalCorrect, isFalse,
-            reason: 'seed $seed left the correct answer first');
+        // Always a valid permutation of the inputs.
+        expect(shuffled.map((a) => a.id).toSet(), {'1', '2', '3', '4'});
+        firstOutcomes.add(shuffled.first.isOriginalCorrect);
       }
+      // Across seeds the correct answer sometimes stays first and sometimes
+      // does not — no derangement constraint is imposed.
+      expect(firstOutcomes, containsAll(<bool>{true, false}),
+          reason: 'a fair shuffle must let the correct answer land first');
     });
 
     test('keeps all answers exactly once', () {

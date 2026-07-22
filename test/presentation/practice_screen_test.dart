@@ -43,8 +43,8 @@ void main() {
     return null;
   }
 
-  testWidgets('text question: shows all shuffled answers, correct never '
-      'first, selection works', (tester) async {
+  testWidgets('text question: shows all shuffled answers, selection works',
+      (tester) async {
     await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
     await tester.pump();
 
@@ -53,18 +53,6 @@ void main() {
       expect(find.text(answer), findsOneWidget);
     }
     expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
-
-    // The correct answer ('16 ביט') is not the first tile.
-    final tiles = tester
-        .widgetList<Text>(find.descendant(
-          of: find.byType(Card),
-          matching: find.byType(Text),
-        ))
-        .map((t) => t.data)
-        .toList();
-    final firstAnswerIndex = tiles.indexWhere((t) =>
-        t == '8 ביט' || t == '32 ביט' || t == '64 ביט' || t == '16 ביט');
-    expect(tiles[firstAnswerIndex], isNot('16 ביט'));
 
     // Selecting an answer marks it.
     await tester.tap(find.text('32 ביט'));
