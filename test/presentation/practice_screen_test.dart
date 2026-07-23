@@ -43,8 +43,7 @@ void main() {
     return null;
   }
 
-  testWidgets('text question: shows all shuffled answers, selection works',
-      (tester) async {
+  testWidgets('text question: shows all shuffled answers', (tester) async {
     await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
     await tester.pump();
 
@@ -53,27 +52,41 @@ void main() {
       expect(find.text(answer), findsOneWidget);
     }
     expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
-
-    // Selecting an answer marks it.
-    await tester.tap(find.text('32 ביט'));
-    await tester.pump();
-    expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
   });
 
-  testWidgets('eye button highlights the original correct answer in green',
-      (tester) async {
+  testWidgets('wrong pick gives immediate feedback and reveals the correct '
+      'answer in green', (tester) async {
     await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
     await tester.pump();
 
     expect(find.byIcon(Icons.check_circle), findsNothing);
 
-    await tester.tap(find.text(AppStrings.revealCorrectAnswer));
+    // Tap a wrong answer (correct is '16 ביט').
+    await tester.tap(find.text('32 ביט'));
     await tester.pump();
 
-    // Exactly one tile gets the green check — the isOriginalCorrect one.
+    // Immediate "wrong" feedback, and the correct answer gets the green check.
+    expect(find.text(AppStrings.answerWrong), findsOneWidget);
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     final check = tester.widget<Icon>(find.byIcon(Icons.check_circle));
     expect(check.color, const Color(0xFF2E7D32));
+
+    // Locked: tapping another answer does not change the feedback.
+    await tester.tap(find.text('8 ביט'));
+    await tester.pump();
+    expect(find.text(AppStrings.answerCorrect), findsNothing);
+  });
+
+  testWidgets('correct pick gives immediate positive feedback',
+      (tester) async {
+    await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
+    await tester.pump();
+
+    await tester.tap(find.text('16 ביט')); // the isOriginalCorrect answer
+    await tester.pump();
+
+    expect(find.text(AppStrings.answerCorrect), findsOneWidget);
+    expect(find.text(AppStrings.answerWrong), findsNothing);
   });
 
   testWidgets('visual question: cropped image by default, full only after '
@@ -95,10 +108,9 @@ void main() {
     expect(currentImagePath(tester), visual.croppedImageUrl);
     expect(find.text(AppStrings.revealOriginalAnswers), findsOneWidget);
 
-    // Silent UX: no radio buttons, no eye helper, no hint text about
-    // shuffling on the visual page.
+    // Silent UX: no radio buttons and no hint text about shuffling on the
+    // visual page.
     expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
-    expect(find.text(AppStrings.revealCorrectAnswer), findsNothing);
     expect(find.textContaining('מעורבב'), findsNothing);
     expect(find.textContaining('לא מעורבל'), findsNothing);
 
@@ -113,10 +125,35 @@ void main() {
     expect(currentImagePath(tester), visual.croppedImageUrl);
   });
 
-  testWidgets('finish button opens the results screen', (tester) async {
+  testWidgets('Next/Previous buttons navigate between questions',
+      (tester) async {
     await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
     await tester.pump();
 
+    // Start on Q1: Next is available, no Finish yet.
+    expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
+    expect(find.text(AppStrings.nextQuestion), findsOneWidget);
+    expect(find.text(AppStrings.finishPractice), findsNothing);
+
+    // Advance with the Next button (no swiping needed).
+    await tester.tap(find.text(AppStrings.nextQuestion));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.questionOf(2, 2)), findsOneWidget);
+
+    // Last question shows Finish; go back with Previous.
+    expect(find.text(AppStrings.finishPractice), findsOneWidget);
+    await tester.tap(find.text(AppStrings.previousQuestion));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
+  });
+
+  testWidgets('finish button on the last question opens results',
+      (tester) async {
+    await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
+    await tester.pump();
+
+    await tester.tap(find.text(AppStrings.nextQuestion));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(AppStrings.finishPractice));
     await tester.pumpAndSettle();
 

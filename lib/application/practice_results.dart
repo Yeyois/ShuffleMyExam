@@ -25,11 +25,25 @@ class PracticeResults {
   const PracticeResults({
     required this.totalScored,
     required this.correctCount,
+    required this.wrongCount,
+    required this.unansweredCount,
+    required this.visualCount,
     required this.mistakes,
   });
 
+  /// Number of scored (text) questions.
   final int totalScored;
   final int correctCount;
+
+  /// Answered but wrong.
+  final int wrongCount;
+
+  /// Left without a selection.
+  final int unansweredCount;
+
+  /// Visual questions (not auto-scored; self-checked by the student).
+  final int visualCount;
+
   final List<Mistake> mistakes;
 
   int get percentage =>
@@ -37,11 +51,17 @@ class PracticeResults {
 
   static PracticeResults from(Exam exam, PracticeSessionState session) {
     var correct = 0;
+    var wrong = 0;
+    var unanswered = 0;
+    var visual = 0;
     final mistakes = <Mistake>[];
     var scored = 0;
 
     for (final question in exam.questions) {
-      if (!question.isShufflable) continue;
+      if (!question.isShufflable) {
+        visual++;
+        continue;
+      }
       final correctAnswer = question.textAnswers
           .firstWhere((a) => a.isOriginalCorrect);
       scored++;
@@ -56,6 +76,11 @@ class PracticeResults {
       if (selected != null && selected.isOriginalCorrect) {
         correct++;
       } else {
+        if (selected == null) {
+          unanswered++;
+        } else {
+          wrong++;
+        }
         mistakes.add(Mistake(
           question: question,
           selectedAnswer: selected,
@@ -67,6 +92,9 @@ class PracticeResults {
     return PracticeResults(
       totalScored: scored,
       correctCount: correct,
+      wrongCount: wrong,
+      unansweredCount: unanswered,
+      visualCount: visual,
       mistakes: mistakes,
     );
   }

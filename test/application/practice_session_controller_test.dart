@@ -67,7 +67,8 @@ void main() {
           reason: 'a fair shuffle must sometimes leave the correct answer first');
     });
 
-    test('selectAnswer, toggleReveal and toggleFullImage update state', () {
+    test('selectAnswer commits once (locked) and toggleFullImage updates '
+        'state', () {
       final exam = mixedExam();
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -75,18 +76,19 @@ void main() {
           container.read(practiceSessionProvider(exam).notifier);
 
       controller.selectAnswer('q1', 'q1-a2');
-      controller.toggleReveal('q1');
       controller.toggleFullImage('q2');
 
       var state = container.read(practiceSessionProvider(exam));
       expect(state.selectedAnswerIds['q1'], 'q1-a2');
-      expect(state.revealedQuestionIds, contains('q1'));
       expect(state.fullImageQuestionIds, contains('q2'));
 
-      controller.toggleReveal('q1');
+      // Answering is final: a second selection is ignored.
+      controller.selectAnswer('q1', 'q1-a3');
+      state = container.read(practiceSessionProvider(exam));
+      expect(state.selectedAnswerIds['q1'], 'q1-a2');
+
       controller.toggleFullImage('q2');
       state = container.read(practiceSessionProvider(exam));
-      expect(state.revealedQuestionIds, isEmpty);
       expect(state.fullImageQuestionIds, isEmpty);
     });
   });
@@ -108,6 +110,9 @@ void main() {
 
       expect(results.totalScored, 2);
       expect(results.correctCount, 1);
+      expect(results.wrongCount, 1);
+      expect(results.unansweredCount, 0);
+      expect(results.visualCount, 1); // q2 is visual
       expect(results.percentage, 50);
       expect(results.mistakes, hasLength(1));
       expect(results.mistakes.single.question.id, 'q3');
