@@ -30,6 +30,8 @@ class ResultsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           _ScoreHeader(results: results),
+          const SizedBox(height: 16),
+          _StatsCard(results: results),
           const SizedBox(height: 24),
           if (results.mistakes.isEmpty && results.totalScored > 0)
             Card(
@@ -94,6 +96,93 @@ class _ScoreHeader extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StatsCard extends StatelessWidget {
+  const _StatsCard({required this.results});
+
+  final PracticeResults results;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(AppStrings.statsTitle,
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            _StatRow(
+              icon: Icons.check_circle,
+              color: ResultsScreen._correctGreen,
+              label: AppStrings.statCorrect,
+              value: results.correctCount,
+            ),
+            _StatRow(
+              icon: Icons.cancel,
+              color: ResultsScreen._wrongRed,
+              label: AppStrings.statWrong,
+              value: results.wrongCount,
+            ),
+            if (results.unansweredCount > 0)
+              _StatRow(
+                icon: Icons.remove_circle_outline,
+                color: Theme.of(context).colorScheme.outline,
+                label: AppStrings.statUnanswered,
+                value: results.unansweredCount,
+              ),
+            if (results.visualCount > 0)
+              _StatRow(
+                icon: Icons.image_outlined,
+                color: Theme.of(context).colorScheme.secondary,
+                label: AppStrings.statVisual,
+                value: results.visualCount,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatRow extends StatelessWidget {
+  const _StatRow({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label,
+                style: Theme.of(context).textTheme.bodyLarge),
+          ),
+          Text(
+            '$value',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold, color: color),
+          ),
+        ],
       ),
     );
   }

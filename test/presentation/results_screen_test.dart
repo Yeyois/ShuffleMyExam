@@ -55,6 +55,26 @@ void main() {
     expect(find.text(AppStrings.mistakesTitle), findsNothing);
   });
 
+  testWidgets('statistics card breaks down correct / wrong / unanswered',
+      (tester) async {
+    const session = PracticeSessionState(
+      shuffledAnswers: {},
+      selectedAnswerIds: {'q1': 'q1-a1'}, // q1 correct, q2 unanswered
+    );
+
+    await pumpScreen(
+      tester,
+      home: ResultsScreen(exam: twoTextQuestions(), session: session),
+    );
+    await tester.pump();
+
+    expect(find.text(AppStrings.statsTitle), findsOneWidget);
+    expect(find.text(AppStrings.statCorrect), findsOneWidget);
+    expect(find.text(AppStrings.statWrong), findsOneWidget);
+    // Unanswered row shows only when there is at least one.
+    expect(find.text(AppStrings.statUnanswered), findsOneWidget);
+  });
+
   testWidgets('unanswered question appears as a mistake without selection',
       (tester) async {
     const session = PracticeSessionState(

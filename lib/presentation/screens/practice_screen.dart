@@ -30,6 +30,25 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     super.dispose();
   }
 
+  void _goToPage(int page) {
+    _pageController.animateToPage(
+      page,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  void _openResults(Exam exam) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ResultsScreen(
+          exam: exam,
+          session: ref.read(practiceSessionProvider(exam)),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final exam = widget.exam;
@@ -65,12 +84,8 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     answers: session.shuffledAnswers[question.id] ?? const [],
                     selectedAnswerId:
                         session.selectedAnswerIds[question.id],
-                    revealCorrect:
-                        session.revealedQuestionIds.contains(question.id),
                     onSelect: (answerId) =>
                         controller.selectAnswer(question.id, answerId),
-                    onToggleReveal: () =>
-                        controller.toggleReveal(question.id),
                   )
                 : VisualQuestionCard(
                     question: question,
@@ -85,20 +100,60 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: FilledButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => ResultsScreen(
-                  exam: exam,
-                  session: ref.read(practiceSessionProvider(exam)),
-                ),
-              ),
-            ),
-            icon: const Icon(Icons.flag_outlined),
-            label: const Text(AppStrings.finishPractice),
+          child: _NavBar(
+            isFirst: _currentPage == 0,
+            isLast: _currentPage == exam.questions.length - 1,
+            onPrevious: () => _goToPage(_currentPage - 1),
+            onNext: () => _goToPage(_currentPage + 1),
+            onFinish: () => _openResults(exam),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Previous / Next controls. On the last question, Next becomes the "finish
+/// and show score" action.
+class _NavBar extends StatelessWidget {
+  const _NavBar({
+    required this.isFirst,
+    required this.isLast,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onFinish,
+  });
+
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onFinish;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: isFirst ? null : onPrevious,
+          icon: const Icon(Icons.arrow_back), // mirrors → points right in RTL
+          label: const Text(AppStrings.previousQuestion),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: isLast
+              ? FilledButton.icon(
+                  onPressed: onFinish,
+                  icon: const Icon(Icons.flag_outlined),
+                  label: const Text(AppStrings.finishPractice),
+                )
+              : FilledButton.icon(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.arrow_forward), // → left in RTL
+                  label: const Text(AppStrings.nextQuestion),
+                ),
+        ),
+      ],
     );
   }
 }

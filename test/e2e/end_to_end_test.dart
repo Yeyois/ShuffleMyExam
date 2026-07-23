@@ -139,6 +139,12 @@ void main() {
     expect(find.text('50%'), findsOneWidget);
     expect(find.textContaining('ALU הוא הרכיב הנכון'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.backToHome),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text(AppStrings.backToHome));
     await tester.pumpAndSettle();
 
@@ -170,7 +176,6 @@ void main() {
         reason: 'default must be the cropped image');
     expect(find.text(AppStrings.revealOriginalAnswers), findsOneWidget);
     expect(find.byIcon(Icons.radio_button_unchecked), findsNothing);
-    expect(find.text(AppStrings.revealCorrectAnswer), findsNothing);
 
     await tester.tap(find.text(AppStrings.revealOriginalAnswers));
     await tester.pump();
@@ -184,6 +189,9 @@ void main() {
     await tester.tap(find.text('0 תמיד'));
     await tester.pump();
 
+    // Advance to the last (visual) question, then finish.
+    await tester.tap(find.text(AppStrings.nextQuestion));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(AppStrings.finishPractice));
     await tester.pumpAndSettle();
 

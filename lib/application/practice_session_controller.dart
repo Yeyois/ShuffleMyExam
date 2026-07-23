@@ -14,31 +14,26 @@ class PracticeSessionState {
   const PracticeSessionState({
     required this.shuffledAnswers,
     this.selectedAnswerIds = const {},
-    this.revealedQuestionIds = const {},
     this.fullImageQuestionIds = const {},
   });
 
   /// questionId -> answers in this session's presentation order.
   final Map<String, List<Answer>> shuffledAnswers;
 
-  /// questionId -> selected answerId.
+  /// questionId -> selected answerId. A question is "answered" (and locked,
+  /// with immediate feedback shown) once it has an entry here.
   final Map<String, String> selectedAnswerIds;
-
-  /// Text questions whose correct answer is currently highlighted.
-  final Set<String> revealedQuestionIds;
 
   /// Visual questions currently showing the full original image.
   final Set<String> fullImageQuestionIds;
 
   PracticeSessionState copyWith({
     Map<String, String>? selectedAnswerIds,
-    Set<String>? revealedQuestionIds,
     Set<String>? fullImageQuestionIds,
   }) =>
       PracticeSessionState(
         shuffledAnswers: shuffledAnswers,
         selectedAnswerIds: selectedAnswerIds ?? this.selectedAnswerIds,
-        revealedQuestionIds: revealedQuestionIds ?? this.revealedQuestionIds,
         fullImageQuestionIds:
             fullImageQuestionIds ?? this.fullImageQuestionIds,
       );
@@ -64,18 +59,14 @@ class PracticeSessionController extends Notifier<PracticeSessionState> {
     );
   }
 
+  /// Commits an answer. Answering is final — once a question has a selection
+  /// it is locked so the immediate correct/wrong feedback stays meaningful
+  /// and first-attempt scoring is honest.
   void selectAnswer(String questionId, String answerId) {
+    if (state.selectedAnswerIds.containsKey(questionId)) return;
     state = state.copyWith(
       selectedAnswerIds: {...state.selectedAnswerIds, questionId: answerId},
     );
-  }
-
-  void toggleReveal(String questionId) {
-    final revealed = {...state.revealedQuestionIds};
-    revealed.contains(questionId)
-        ? revealed.remove(questionId)
-        : revealed.add(questionId);
-    state = state.copyWith(revealedQuestionIds: revealed);
   }
 
   void toggleFullImage(String questionId) {
