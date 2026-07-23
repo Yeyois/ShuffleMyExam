@@ -29,6 +29,17 @@ abstract final class AppStrings {
   static const exportFailed = 'יצירת הקובץ נכשלה';
   static const sharePdfSubject = 'מבחן מעורבב';
 
+  // Shuffled-PDF library.
+  static const libraryTitle = 'מבחנים מעורבבים';
+  static const openLibrary = 'מבחנים מעורבבים';
+  static const emptyLibrary =
+      'עדיין אין קבצים מעורבבים. צרו מבחן מעורבב כדי שיופיע כאן.';
+  static const shuffleAgain = 'צור מבחן מעורבב';
+  static const shareFile = 'שיתוף / הורדה';
+  static const deleteFile = 'מחיקת קובץ';
+  static const deleteFileConfirm = 'למחוק את הקובץ המעורבב הזה?';
+  static const savedToLibrary = 'הקובץ נשמר לספריית המבחנים המעורבבים';
+
   // Practice screen.
   static const revealOriginalAnswers = 'הצג פתרון מקורי';
   static const showCroppedAgain = 'הסתר פתרון';
