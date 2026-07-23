@@ -21,7 +21,19 @@ void main() {
       );
     });
 
-    test('rejects points above the bottom zone', () {
+    test('a full-height zone accepts points near the top', () {
+      expect(
+        isPointInTrailZone(
+          point: const Offset(200, 40),
+          size: size,
+          zoneHeightFraction: 1,
+          exclusions: const [],
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects points above a footer-only zone', () {
       expect(
         isPointInTrailZone(
           point: const Offset(200, 300),
@@ -126,6 +138,21 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(system.isIdle, isTrue);
+    });
+
+    testWidgets('free space above the footer is live too', (tester) async {
+      await pumpLayer(tester);
+
+      // Just below the card — inside the old footer-only zone's dead area.
+      final gesture = await tester.startGesture(const Offset(200, 330));
+      await tester.pump(const Duration(milliseconds: 16));
+      await gesture.moveTo(const Offset(250, 360));
+      await tester.pump(const Duration(milliseconds: 16));
+
+      expect(system.birds, isNotEmpty);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('touching a card never starts a trail', (tester) async {

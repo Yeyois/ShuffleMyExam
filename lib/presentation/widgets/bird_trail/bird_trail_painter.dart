@@ -11,12 +11,16 @@ class BirdTrailPainter extends CustomPainter {
   BirdTrailPainter({
     required this.system,
     required this.glowColor,
-    required this.birdColor,
+    required this.birdLightness,
   }) : super(repaint: system);
 
   final BirdTrailSystem system;
   final Color glowColor;
-  final Color birdColor;
+
+  /// HSL lightness for the flock, picked by the layer from the current theme:
+  /// bright birds glow on a dark surface, deeper ones stay legible on a light
+  /// one. Hue and saturation come from the bird itself.
+  final double birdLightness;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -40,11 +44,11 @@ class BirdTrailPainter extends CustomPainter {
     // Soft radial falloff instead of a blur filter — same bloom, far cheaper.
     final shader = RadialGradient(
       colors: [
-        glowColor.withValues(alpha: 0.34 * fade),
-        glowColor.withValues(alpha: 0.14 * fade),
+        glowColor.withValues(alpha: 0.55 * fade),
+        glowColor.withValues(alpha: 0.20 * fade),
         glowColor.withValues(alpha: 0),
       ],
-      stops: const [0, 0.45, 1],
+      stops: const [0, 0.3, 1],
     ).createShader(rect);
     canvas.drawCircle(center, radius, Paint()..shader = shader);
   }
@@ -53,29 +57,42 @@ class BirdTrailPainter extends CustomPainter {
     final envelope = bird.envelope;
     if (envelope <= 0.01) return;
 
-    final span = bird.scale * (0.6 + 0.5 * envelope) * 9;
-    final speed = bird.velocity.distance;
-    final angle = speed > 1 ? bird.velocity.direction : 0.0;
+    final span = bird.scale * (0.6 + 0.5 * envelope) * 15;
     // Wing beat: 0 = wings level, 1 = wings raised.
-    final flap = 0.5 + 0.5 * math.sin(bird.age * 26 + bird.wingPhase);
-    final lift = span * (0.3 + 0.5 * flap);
+    final flap = 0.5 + 0.5 * math.sin(bird.age * 22 + bird.wingPhase);
+    // Wingtips ride from slightly up to well above the body — never below,
+    // since drooped tips read as a smile rather than a bird.
+    final tip = span * (-0.18 - 0.4 * flap);
 
     canvas.save();
     canvas.translate(bird.position.dx, bird.position.dy);
-    canvas.rotate(angle);
-    // Classic two-stroke gull silhouette.
+    // Birds stay upright, the way a gull reads against the sky — rotating the
+    // silhouette to face its heading would swing the wingspan into the line of
+    // travel and turn it into a squiggle. Only the bank varies: sin(heading) is
+    // the vertical share of the smoothed flight direction, so a bird climbing
+    // tips up and a diving one tips down.
+    canvas.rotate(math.sin(bird.heading) * 0.35);
+    // Classic gull silhouette. Each wing is an arc from the raised tip down to
+    // the body, with its control point *above* the chord so the wing bulges
+    // upward — the two humps and the notch between them are what make it read
+    // as a bird instead of a wave.
     final path = Path()
-      ..moveTo(-span, 0)
-      ..quadraticBezierTo(-span * 0.5, -lift, 0, -span * 0.1)
-      ..quadraticBezierTo(span * 0.5, -lift, span, 0);
+      ..moveTo(-span, tip)
+      ..quadraticBezierTo(-span * 0.5, tip * 1.15, 0, 0)
+      ..quadraticBezierTo(span * 0.5, tip * 1.15, span, tip);
     canvas.drawPath(
       path,
       Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = math.max(1.1, span * 0.17)
+        ..strokeWidth = math.max(1.2, span * 0.11)
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round
-        ..color = birdColor.withValues(alpha: envelope * fade),
+        ..color = HSLColor.fromAHSL(
+          envelope * fade,
+          bird.hue,
+          0.85,
+          birdLightness,
+        ).toColor(),
     );
     canvas.restore();
   }
@@ -84,5 +101,5 @@ class BirdTrailPainter extends CustomPainter {
   bool shouldRepaint(BirdTrailPainter old) =>
       old.system != system ||
       old.glowColor != glowColor ||
-      old.birdColor != birdColor;
+      old.birdLightness != birdLightness;
 }

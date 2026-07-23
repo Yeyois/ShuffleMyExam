@@ -55,30 +55,35 @@ class HomeScreen extends ConsumerWidget {
     final exams = ref.watch(examsProvider);
     final brightness = Theme.of(context).brightness;
 
-    // The free space below the exam cards doubles as a playful canvas: a
-    // finger dragged through it trails glowing birds.
+    // The free space around the exam cards doubles as a playful canvas: a
+    // finger dragged across it trails glowing birds. Cards, the app-bar
+    // buttons and the FAB are excluded, so only empty space reacts.
     return BirdTrailLayer(
       child: Scaffold(
         appBar: AppBar(
           title: const Text(AppStrings.homeTitle),
           actions: [
-            IconButton(
-              tooltip: AppStrings.openLibrary,
-              icon: const Icon(Icons.folder_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ShuffledLibraryScreen(),
+            TrailExclusion(
+              child: IconButton(
+                tooltip: AppStrings.openLibrary,
+                icon: const Icon(Icons.folder_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ShuffledLibraryScreen(),
+                  ),
                 ),
               ),
             ),
-            IconButton(
-              tooltip: 'מצב תצוגה',
-              icon: Icon(brightness == Brightness.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined),
-              onPressed: () => ref
-                  .read(themeModeControllerProvider.notifier)
-                  .toggle(brightness),
+            TrailExclusion(
+              child: IconButton(
+                tooltip: 'מצב תצוגה',
+                icon: Icon(brightness == Brightness.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined),
+                onPressed: () => ref
+                    .read(themeModeControllerProvider.notifier)
+                    .toggle(brightness),
+              ),
             ),
           ],
         ),

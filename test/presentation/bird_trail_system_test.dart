@@ -68,8 +68,10 @@ void main() {
 
     test('birds die once past their lifespan', () {
       system.begin(const Offset(50, 400));
+      // A very long fade so death is what clears the flock, not the fade.
       system.stop(fadeOut: const Duration(seconds: 10));
-      _run(system, 0.5);
+      final lifespan = BirdTrailTuning.particleLifespan.inMilliseconds / 1000;
+      _run(system, lifespan * 1.5);
 
       expect(system.birds, isEmpty);
     });

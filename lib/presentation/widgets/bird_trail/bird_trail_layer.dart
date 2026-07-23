@@ -4,8 +4,11 @@ import 'package:flutter/scheduler.dart';
 import 'bird_trail_painter.dart';
 import 'bird_trail_system.dart';
 
-/// True when [point] may emit birds: inside the bottom zone of a [size] box and
+/// True when [point] may emit birds: inside the live zone of a [size] box and
 /// clear of every excluded (interactive) rect.
+///
+/// [zoneHeightFraction] is the share of the height, measured up from the
+/// bottom, that is live — 1 for the whole screen.
 ///
 /// Pure geometry so the hit-test rule can be unit-tested on its own.
 bool isPointInTrailZone({
@@ -101,26 +104,27 @@ class _TrailExclusionState extends State<TrailExclusion> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// Wraps a screen with an interactive footer canvas: dragging a finger through
-/// the free space at the bottom emits a glowing aura and a trail of birds that
-/// chase the fingertip.
+/// Wraps a screen with an interactive canvas: dragging a finger across the free
+/// space emits a glowing aura and a trail of birds that chase the fingertip.
 ///
 /// The layer never consumes gestures — it listens translucently, so scrolling
-/// and taps behave exactly as they did without it. Emission is confined to the
-/// bottom [zoneHeightFraction] of the screen and blocked by every
-/// [TrailExclusion] in the subtree.
+/// and taps behave exactly as they did without it. The whole screen is live by
+/// default; what keeps the effect off the content is [TrailExclusion], which
+/// blocks emission over every card, button and other interactive element in
+/// the subtree.
 class BirdTrailLayer extends StatefulWidget {
   const BirdTrailLayer({
     super.key,
     required this.child,
-    this.zoneHeightFraction = 0.42,
+    this.zoneHeightFraction = 1,
     this.enabled = true,
     @visibleForTesting this.system,
   });
 
   final Widget child;
 
-  /// Share of the screen height, measured from the bottom, that is live.
+  /// Share of the screen height, measured up from the bottom, that is live.
+  /// Defaults to the full screen; lower it to confine the canvas to a footer.
   final double zoneHeightFraction;
 
   final bool enabled;
@@ -227,7 +231,9 @@ class _BirdTrailLayerState extends State<BirdTrailLayer>
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Listener(
       behavior: HitTestBehavior.translucent,
@@ -250,7 +256,7 @@ class _BirdTrailLayerState extends State<BirdTrailLayer>
                     painter: BirdTrailPainter(
                       system: _system,
                       glowColor: scheme.primary,
-                      birdColor: scheme.onSurface,
+                      birdLightness: isDark ? 0.66 : 0.45,
                     ),
                   ),
                 ),

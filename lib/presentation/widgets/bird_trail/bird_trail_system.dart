@@ -7,7 +7,12 @@ import 'package:flutter/foundation.dart';
 /// adjusted without touching the simulation or the painter.
 abstract final class BirdTrailTuning {
   /// How long a single bird lives once spawned (jittered per bird).
-  static const Duration particleLifespan = Duration(milliseconds: 280);
+  ///
+  /// Longer than the 200–300 ms in the spec: at 300 ms the flock collapses
+  /// onto the fingertip and never reads as a trail. The *visible* fade rule
+  /// still holds — [releaseFade] drives the global alpha, so everything is
+  /// gone within 400 ms of the finger lifting regardless of bird age.
+  static const Duration particleLifespan = Duration(milliseconds: 700);
 
   /// Fade-out after the finger is lifted.
   static const Duration releaseFade = Duration(milliseconds: 400);
@@ -16,13 +21,15 @@ abstract final class BirdTrailTuning {
   static const Duration boundaryFade = Duration(milliseconds: 200);
 
   /// Time between bird spawns while the emitter is live.
-  static const Duration spawnInterval = Duration(milliseconds: 34);
+  static const Duration spawnInterval = Duration(milliseconds: 55);
 
   /// Hard cap on live birds — keeps the per-frame cost flat.
-  static const int maxBirds = 28;
+  static const int maxBirds = 18;
 
-  /// Radius of the glow aura under the fingertip, in logical pixels.
-  static const double glowRadius = 74;
+  /// Radius of the glow aura under the fingertip, in logical pixels. Kept
+  /// close to a fingertip — larger reads as a smudge following the touch
+  /// rather than a light at it.
+  static const double glowRadius = 30;
 }
 
 /// A single bird in the trail. Mutable and reused per frame — the simulation
@@ -35,10 +42,16 @@ class Bird {
     required this.scale,
     required this.wingPhase,
     required this.wander,
+    required this.hue,
   });
 
   Offset position;
   Offset velocity;
+
+  /// Smoothed flight direction, in radians. Birds bank toward their heading
+  /// instead of snapping to the instantaneous velocity, which would spin them
+  /// on the spot whenever they slow down.
+  double heading = 0;
 
   /// Seconds this bird lives for.
   final double lifespan;
@@ -54,6 +67,10 @@ class Bird {
   /// Signed [-1, 1] steering bias — gives each bird its own drift so the
   /// flock spreads instead of collapsing onto a single line.
   final double wander;
+
+  /// Hue in degrees. Walked forward per spawn so the trail reads as a rainbow
+  /// ribbon rather than a bag of random colours.
+  final double hue;
 
   double get life => (age / lifespan).clamp(0.0, 1.0);
 
@@ -86,6 +103,7 @@ class BirdTrailSystem extends ChangeNotifier {
   double _fadeRate = 0;
   double _sinceSpawn = 0;
   double _elapsed = 0;
+  double _hue = 0;
 
   /// Where to draw the glow aura, or null when there is nothing to draw.
   Offset? get glowCenter => _glowCenter;
@@ -110,6 +128,8 @@ class BirdTrailSystem extends ChangeNotifier {
     _fade = 1;
     _fadeRate = 0;
     _sinceSpawn = 0;
+    // Every stroke starts somewhere new on the wheel.
+    _hue = _random.nextDouble() * 360;
     _spawn(point);
     notifyListeners();
   }
@@ -184,17 +204,26 @@ class BirdTrailSystem extends ChangeNotifier {
     if (_birds.length >= BirdTrailTuning.maxBirds) return;
     final lifespan = BirdTrailTuning.particleLifespan.inMicroseconds /
         Duration.microsecondsPerSecond;
+    // Birds are thrown behind the fingertip so the trail lags into a path.
+    final velocity = -_moveDelta * 9 + _jitter(90);
     _birds.add(
       Bird(
-        position: at + _jitter(16),
-        // Birds are thrown slightly behind the fingertip so the trail lags.
-        velocity: -_moveDelta * 6 + _jitter(70),
+        position: at + _jitter(34),
+        velocity: velocity,
         lifespan: lifespan * (0.8 + _random.nextDouble() * 0.4),
         scale: 0.75 + _random.nextDouble() * 0.5,
         wingPhase: _random.nextDouble() * math.pi * 2,
         wander: _random.nextDouble() * 2 - 1,
-      ),
+        hue: _nextHue(),
+      )..heading = velocity.direction,
     );
+  }
+
+  /// Advances the hue by a step that doesn't divide 360, so the trail cycles
+  /// through the whole wheel without ever repeating a neighbour's colour.
+  double _nextHue() {
+    _hue = (_hue + 47) % 360;
+    return _hue;
   }
 
   Offset _jitter(double magnitude) => Offset(
@@ -207,8 +236,12 @@ class BirdTrailSystem extends ChangeNotifier {
 
     if (target != null) {
       // Spring pull toward the fingertip; per-bird stiffness spreads the flock.
+      // Eased off close in so the flock doesn't converge onto a single point,
+      // but strong enough far out that stragglers chase rather than stall.
       final toTarget = target - bird.position;
-      bird.velocity += toTarget * (9 + bird.wander.abs() * 7) * dt;
+      final closeness = (toTarget.distance / 90).clamp(0.5, 1.0);
+      bird.velocity +=
+          toTarget * (5 + bird.wander.abs() * 3) * closeness * dt;
     }
 
     final speed = bird.velocity.distance;
@@ -220,8 +253,20 @@ class BirdTrailSystem extends ChangeNotifier {
       bird.velocity += perpendicular * (swing * bird.wander * 140 * dt);
     }
 
-    // Exponential drag — frame-rate independent.
-    bird.velocity *= math.pow(0.22, dt).toDouble();
+    // Light drag — birds glide on rather than stopping dead.
+    bird.velocity *= math.pow(0.45, dt).toDouble();
     bird.position += bird.velocity * dt;
+
+    if (speed > 25) {
+      // Ease the heading toward the direction of travel, the short way round.
+      var delta = bird.velocity.direction - bird.heading;
+      while (delta > math.pi) {
+        delta -= 2 * math.pi;
+      }
+      while (delta < -math.pi) {
+        delta += 2 * math.pi;
+      }
+      bird.heading += delta * (1 - math.pow(0.02, dt).toDouble());
+    }
   }
 }
