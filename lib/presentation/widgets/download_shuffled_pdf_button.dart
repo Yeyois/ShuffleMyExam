@@ -1,16 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../application/providers.dart';
 import '../../core/constants/app_strings.dart';
 import '../../domain/models/exam.dart';
 
-/// Generates a shuffled PDF of [exam] and opens the system share sheet so the
-/// user can save it (Files/Drive), print, or send it — all offline.
+/// Generates a shuffled PDF of [exam], saves it to the shuffled-PDF library so
+/// it can be re-downloaded later, and opens the system share sheet so the user
+/// can save it (Files/Drive), print, or send it — all offline.
 ///
 /// Shown after a successful import (and reusable elsewhere). Manages its own
 /// busy state locally since generation is a one-shot fire-and-share action.
@@ -33,17 +31,14 @@ class _DownloadShuffledPdfButtonState
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final bytes = await ref
-          .read(shuffledPdfExportServiceProvider)
-          .generate(widget.exam);
-
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/${_fileName(widget.exam.title)}');
-      await file.writeAsBytes(bytes, flush: true);
+      final record = await ref
+          .read(shuffledPdfLibraryServiceProvider)
+          .generateAndSave(widget.exam);
+      ref.invalidate(shuffledPdfsProvider);
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path, mimeType: 'application/pdf')],
+          files: [XFile(record.filePath, mimeType: 'application/pdf')],
           subject: AppStrings.sharePdfSubject,
         ),
       );
@@ -54,15 +49,6 @@ class _DownloadShuffledPdfButtonState
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  /// A safe, human-readable file name derived from the exam title.
-  String _fileName(String title) {
-    final base = title
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    return '${base.isEmpty ? 'exam' : base}_shuffled.pdf';
   }
 
   @override

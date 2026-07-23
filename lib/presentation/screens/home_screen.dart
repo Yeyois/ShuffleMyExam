@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../application/providers.dart';
 import '../../application/theme_mode_controller.dart';
@@ -7,6 +8,7 @@ import '../../core/constants/app_strings.dart';
 import '../../domain/models/exam.dart';
 import 'practice_screen.dart';
 import 'processing_screen.dart';
+import 'shuffled_library_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -54,6 +56,15 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text(AppStrings.homeTitle),
         actions: [
+          IconButton(
+            tooltip: AppStrings.openLibrary,
+            icon: const Icon(Icons.folder_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ShuffledLibraryScreen(),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'מצב תצוגה',
             icon: Icon(brightness == Brightness.dark
@@ -112,14 +123,53 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _ExamTile extends ConsumerWidget {
+class _ExamTile extends ConsumerStatefulWidget {
   const _ExamTile({required this.exam, required this.onDelete});
 
   final Exam exam;
   final Future<void> Function(BuildContext, WidgetRef, Exam) onDelete;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ExamTile> createState() => _ExamTileState();
+}
+
+class _ExamTileState extends ConsumerState<_ExamTile> {
+  bool _shuffling = false;
+
+  /// Generates a fresh shuffled PDF for this exam, saves it to the library,
+  /// and opens the share sheet.
+  Future<void> _shuffle() async {
+    if (_shuffling) return;
+    setState(() => _shuffling = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final record = await ref
+          .read(shuffledPdfLibraryServiceProvider)
+          .generateAndSave(widget.exam);
+      ref.invalidate(shuffledPdfsProvider);
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(record.filePath, mimeType: 'application/pdf')],
+          subject: AppStrings.sharePdfSubject,
+        ),
+      );
+    } on Object {
+      messenger.showSnackBar(
+        const SnackBar(content: Text(AppStrings.exportFailed)),
+      );
+    } finally {
+      if (mounted) setState(() => _shuffling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final exam = widget.exam;
+    // Only offer re-shuffle when the original PDF was retained (older exams
+    // imported before retention can't be re-exported).
+    final canShuffle = exam.originalPdfPath != null;
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: ListTile(
@@ -127,10 +177,27 @@ class _ExamTile extends ConsumerWidget {
         title: Text(exam.title,
             maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text('${exam.questions.length} שאלות'),
-        trailing: IconButton(
-          tooltip: AppStrings.deleteExam,
-          icon: const Icon(Icons.delete_outline),
-          onPressed: () => onDelete(context, ref, exam),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (canShuffle)
+              IconButton(
+                tooltip: AppStrings.shuffleAgain,
+                icon: _shuffling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.shuffle),
+                onPressed: _shuffling ? null : _shuffle,
+              ),
+            IconButton(
+              tooltip: AppStrings.deleteExam,
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => widget.onDelete(context, ref, exam),
+            ),
+          ],
         ),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute<void>(
