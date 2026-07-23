@@ -1,0 +1,12 @@
+# Copy this file to `key.properties` (same folder) and fill in your real values.
+# `key.properties`, *.jks and *.keystore are gitignored — never commit the real one.
+#
+# Generate the keystore with:
+#   keytool -genkey -v -keystore ~/upload-keystore.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+
+storePassword=your_keystore_password
+keyPassword=your_key_password
+keyAlias=upload
+# Absolute path to the .jks file (e.g. /home/yeyo/upload-keystore.jks)
+storeFile=/absolute/path/to/upload-keystore.jks
