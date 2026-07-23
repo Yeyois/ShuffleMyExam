@@ -17,8 +17,11 @@ network calls, no PDFs leave your device.
   isolate via `compute()`, so the UI never freezes.
 - **Answer shuffling.** Extracted text answers are shuffled each session,
   and the originally-correct answer is never left in the first position.
-- **Reveal helper.** An "eye" button highlights the correct answer in green
-  for self-checking without failing you.
+- **Immediate feedback.** Picking an answer locks the question and marks it
+  at once — your pick in red if wrong, the correct one in green. A correct
+  answer auto-advances to the next question.
+- **Download the shuffled exam as a PDF.** The reordered exam is re-stamped
+  in the original layout, so you can print or practice on paper.
 - **Visual questions (diagrams / Karnaugh maps / circuits).** Questions the
   parser can't safely turn into shuffled text fall back to an image of the
   question body, cropped **above** the original answers so the Zero-Exam
@@ -33,9 +36,9 @@ network calls, no PDFs leave your device.
 
 | Home | Processing | Practice |
 |:---:|:---:|:---:|
-| ![Home screen with an imported exam](docs/screenshots/home.png) | ![On-device parse summary](docs/screenshots/processing.png) | ![A question with shuffled answers](docs/screenshots/practice.png) |
-| **Reveal correct answer** | **Results** | **Dark mode** |
-| ![Reveal helper highlighting the correct answer in green](docs/screenshots/reveal.png) | ![Score and mistake breakdown](docs/screenshots/results.png) | ![Home screen in dark mode](docs/screenshots/home-dark.png) |
+| ![Home screen listing imported exams](docs/screenshots/home.png) | ![On-device parse summary](docs/screenshots/processing.png) | ![A question with shuffled answers](docs/screenshots/practice.png) |
+| **Answer feedback** | **Results** | **Dark mode** |
+| ![A wrong pick in red with the correct answer in green](docs/screenshots/feedback.png) | ![Score ring, statistics and mistake breakdown](docs/screenshots/results.png) | ![Dark mode with the bird trail following a fingertip](docs/screenshots/home-dark.png) |
 
 ## Tech stack
 
@@ -110,10 +113,12 @@ flutter build apk --debug
 
 1. On the home screen, tap **ייבוא מבחן** (the + button) and pick a
    Zero-Exam PDF.
-2. Wait for the on-device parse to finish, then tap **התחל תרגול**.
-3. Swipe through questions, select answers, and use the eye button to
-   reveal the correct one. Tap **סיים תרגול והצג ציון** for your score and a
-   breakdown of mistakes (your answer in red, the correct one in green).
+2. Wait for the on-device parse to finish, then tap **התחל תרגול** — or
+   **הורדת מבחן מעורבב (PDF)** to save the shuffled exam for printing.
+3. Move through the questions with **השאלה הבאה** / **הקודמת** and pick an
+   answer; it is marked right away, and a correct one advances on its own.
+   Tap **סיים תרגול והצג ציון** for your score and a breakdown of mistakes
+   (your answer in red, the correct one in green).
 
 ## Tests
 

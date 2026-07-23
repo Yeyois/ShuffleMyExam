@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import '../../application/practice_session_controller.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
+import '../../domain/models/question.dart';
 import '../widgets/text_question_card.dart';
 import '../widgets/visual_question_card.dart';
 import 'results_screen.dart';
@@ -22,21 +25,49 @@ class PracticeScreen extends ConsumerStatefulWidget {
 }
 
 class _PracticeScreenState extends ConsumerState<PracticeScreen> {
+  /// How long the correct-answer feedback stays on screen before the flow
+  /// moves on by itself — long enough for the tile pop and banner to land.
+  static const _autoAdvanceDelay = Duration(milliseconds: 1100);
+
   final _pageController = PageController();
   int _currentPage = 0;
+  Timer? _autoAdvanceTimer;
 
   @override
   void dispose() {
+    _autoAdvanceTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
 
   void _goToPage(int page) {
+    _autoAdvanceTimer?.cancel();
     _pageController.animateToPage(
       page,
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeInOut,
     );
+  }
+
+  /// Commits the answer and, when it is the correct one, schedules a hands-free
+  /// jump to the next question. A wrong pick stays put so the user can study
+  /// the highlighted correct answer.
+  void _selectAnswer(Question question, int index, String answerId) {
+    ref
+        .read(practiceSessionProvider(widget.exam).notifier)
+        .selectAnswer(question.id, answerId);
+
+    final correct = question.textAnswers
+        .any((a) => a.id == answerId && a.isOriginalCorrect);
+    final isLast = index == widget.exam.questions.length - 1;
+    if (!correct || isLast) return;
+
+    _autoAdvanceTimer?.cancel();
+    _autoAdvanceTimer = Timer(_autoAdvanceDelay, () {
+      // Skip if the user already navigated away themselves.
+      if (!mounted || _currentPage != index) return;
+      _goToPage(index + 1);
+    });
   }
 
   void _openResults(Exam exam) {
@@ -84,7 +115,10 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       body: PageView.builder(
         controller: _pageController,
         itemCount: exam.questions.length,
-        onPageChanged: (page) => setState(() => _currentPage = page),
+        onPageChanged: (page) {
+          _autoAdvanceTimer?.cancel();
+          setState(() => _currentPage = page);
+        },
         itemBuilder: (context, index) {
           final question = exam.questions[index];
           return SingleChildScrollView(
@@ -96,7 +130,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     selectedAnswerId:
                         session.selectedAnswerIds[question.id],
                     onSelect: (answerId) =>
-                        controller.selectAnswer(question.id, answerId),
+                        _selectAnswer(question, index, answerId),
                   )
                 : VisualQuestionCard(
                     question: question,

@@ -8,9 +8,9 @@ import '../../application/theme_mode_controller.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
+import '../widgets/bird_trail/bird_trail_layer.dart';
 import 'practice_screen.dart';
 import 'processing_screen.dart';
-import 'shuffled_library_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -54,54 +54,54 @@ class HomeScreen extends ConsumerWidget {
     final exams = ref.watch(examsProvider);
     final brightness = Theme.of(context).brightness;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppStrings.homeTitle),
-        actions: [
-          IconButton(
-            tooltip: AppStrings.openLibrary,
-            icon: const Icon(Icons.folder_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ShuffledLibraryScreen(),
+    // The free space around the exam cards doubles as a playful canvas: a
+    // finger dragged across it trails glowing birds. Cards, the app-bar
+    // buttons and the FAB are excluded, so only empty space reacts.
+    return BirdTrailLayer(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(AppStrings.homeTitle),
+          actions: [
+            TrailExclusion(
+              child: IconButton(
+                tooltip: 'מצב תצוגה',
+                icon: Icon(brightness == Brightness.dark
+                    ? Icons.light_mode_outlined
+                    : Icons.dark_mode_outlined),
+                onPressed: () => ref
+                    .read(themeModeControllerProvider.notifier)
+                    .toggle(brightness),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'מצב תצוגה',
-            icon: Icon(brightness == Brightness.dark
-                ? Icons.light_mode_outlined
-                : Icons.dark_mode_outlined),
-            onPressed: () => ref
-                .read(themeModeControllerProvider.notifier)
-                .toggle(brightness),
-          ),
-        ],
+          ],
+        ),
+        body: exams.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (list) => list.isEmpty
+              ? const _EmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 96, top: 8),
+                  itemCount: list.length,
+                  itemBuilder: (context, index) =>
+                      _ExamTile(exam: list[index], onDelete: _confirmDelete)
+                          .animate(delay: (index.clamp(0, 10) * 60).ms)
+                          .fadeIn(duration: Motion.medium)
+                          .slideY(begin: 0.25, curve: Motion.spring)
+                          .scaleXY(begin: 0.96, curve: Motion.easeOut),
+                ),
+        ),
+        floatingActionButton: TrailExclusion(
+          child: FloatingActionButton.extended(
+            onPressed: () => _importPdf(context, ref),
+            icon: const Icon(Icons.add),
+            label: const Text(AppStrings.importExam),
+          )
+              .animate(delay: 250.ms)
+              .slideY(begin: 1.4, curve: Motion.spring, duration: Motion.slow)
+              .fadeIn(),
+        ),
       ),
-      body: exams.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (list) => list.isEmpty
-            ? const _EmptyState()
-            : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 96, top: 8),
-                itemCount: list.length,
-                itemBuilder: (context, index) =>
-                    _ExamTile(exam: list[index], onDelete: _confirmDelete)
-                        .animate(delay: (index.clamp(0, 10) * 60).ms)
-                        .fadeIn(duration: Motion.medium)
-                        .slideY(begin: 0.25, curve: Motion.spring)
-                        .scaleXY(begin: 0.96, curve: Motion.easeOut),
-              ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _importPdf(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text(AppStrings.importExam),
-      )
-          .animate(delay: 250.ms)
-          .slideY(begin: 1.4, curve: Motion.spring, duration: Motion.slow)
-          .fadeIn(),
     );
   }
 }
@@ -146,23 +146,23 @@ class _ExamTile extends ConsumerStatefulWidget {
 }
 
 class _ExamTileState extends ConsumerState<_ExamTile> {
-  bool _shuffling = false;
+  bool _downloading = false;
 
-  /// Generates a fresh shuffled PDF for this exam, saves it to the library,
-  /// and opens the share sheet.
-  Future<void> _shuffle() async {
-    if (_shuffling) return;
-    setState(() => _shuffling = true);
+  /// Generates a fresh shuffled PDF for this exam and hands it to the system
+  /// sheet so the user can save it to Files/Drive or print it — the offline
+  /// equivalent of a download.
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final record = await ref
-          .read(shuffledPdfLibraryServiceProvider)
-          .generateAndSave(widget.exam);
-      ref.invalidate(shuffledPdfsProvider);
+      final file = await ref
+          .read(shuffledPdfDownloadServiceProvider)
+          .generate(widget.exam);
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(record.filePath, mimeType: 'application/pdf')],
+          files: [XFile(file.path, mimeType: 'application/pdf')],
           subject: AppStrings.sharePdfSubject,
         ),
       );
@@ -171,49 +171,51 @@ class _ExamTileState extends ConsumerState<_ExamTile> {
         const SnackBar(content: Text(AppStrings.exportFailed)),
       );
     } finally {
-      if (mounted) setState(() => _shuffling = false);
+      if (mounted) setState(() => _downloading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final exam = widget.exam;
-    // Only offer re-shuffle when the original PDF was retained (older exams
+    // Only offer a download when the original PDF was retained (older exams
     // imported before retention can't be re-exported).
-    final canShuffle = exam.originalPdfPath != null;
+    final canDownload = exam.originalPdfPath != null;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.quiz_outlined)),
-        title: Text(exam.title,
-            maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text('${exam.questions.length} שאלות'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canShuffle)
+    return TrailExclusion(
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.quiz_outlined)),
+          title: Text(exam.title,
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${exam.questions.length} שאלות'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canDownload)
+                IconButton(
+                  tooltip: AppStrings.downloadShuffledPdf,
+                  icon: _downloading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined),
+                  onPressed: _downloading ? null : _download,
+                ),
               IconButton(
-                tooltip: AppStrings.shuffleAgain,
-                icon: _shuffling
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.shuffle),
-                onPressed: _shuffling ? null : _shuffle,
+                tooltip: AppStrings.deleteExam,
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => widget.onDelete(context, ref, exam),
               ),
-            IconButton(
-              tooltip: AppStrings.deleteExam,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => widget.onDelete(context, ref, exam),
+            ],
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PracticeScreen(exam: exam),
             ),
-          ],
-        ),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PracticeScreen(exam: exam),
           ),
         ),
       ),

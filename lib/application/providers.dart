@@ -1,21 +1,14 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/export/shuffled_pdf_download_service.dart';
 import '../data/export/shuffled_pdf_export_service.dart';
-import '../data/export/shuffled_pdf_library_service.dart';
 import '../data/parsing/exam_import_service.dart';
 import '../domain/models/exam.dart';
-import '../domain/models/shuffled_pdf.dart';
 import '../domain/repositories/exam_repository.dart';
-import '../domain/repositories/shuffled_pdf_repository.dart';
 
 /// Bound at bootstrap (see main.dart) once Hive is initialized.
 final examRepositoryProvider = Provider<ExamRepository>(
-  (ref) => throw UnimplementedError('overridden at bootstrap'),
-);
-
-/// Library of generated shuffled PDFs; bound at bootstrap.
-final shuffledPdfRepositoryProvider = Provider<ShuffledPdfRepository>(
   (ref) => throw UnimplementedError('overridden at bootstrap'),
 );
 
@@ -24,8 +17,9 @@ final imagesRootDirProvider = Provider<String>(
   (ref) => throw UnimplementedError('overridden at bootstrap'),
 );
 
-/// Directory where retained shuffled PDFs are stored; bound at bootstrap.
-final shuffledLibraryDirProvider = Provider<String>(
+/// Scratch directory generated shuffled PDFs are written to before being
+/// handed to the share/save sheet; bound at bootstrap.
+final shuffledPdfOutputDirProvider = Provider<String>(
   (ref) => throw UnimplementedError('overridden at bootstrap'),
 );
 
@@ -35,23 +29,16 @@ final examImportServiceProvider =
 final shuffledPdfExportServiceProvider =
     Provider<ShuffledPdfExportService>((ref) => const ShuffledPdfExportService());
 
-final shuffledPdfLibraryServiceProvider =
-    Provider<ShuffledPdfLibraryService>(
-  (ref) => ShuffledPdfLibraryService(
+final shuffledPdfDownloadServiceProvider = Provider<ShuffledPdfDownloadService>(
+  (ref) => ShuffledPdfDownloadService(
     exportService: ref.watch(shuffledPdfExportServiceProvider),
-    repository: ref.watch(shuffledPdfRepositoryProvider),
-    libraryDir: ref.watch(shuffledLibraryDirProvider),
+    outputDir: ref.watch(shuffledPdfOutputDirProvider),
   ),
 );
 
 /// All saved exams, newest first.
 final examsProvider = FutureProvider<List<Exam>>(
   (ref) => ref.watch(examRepositoryProvider).getExams(),
-);
-
-/// All saved shuffled PDFs, newest first.
-final shuffledPdfsProvider = FutureProvider<List<ShuffledPdf>>(
-  (ref) => ref.watch(shuffledPdfRepositoryProvider).getShuffledPdfs(),
 );
 
 /// Thin wrapper around file_picker so widget tests can fake it.

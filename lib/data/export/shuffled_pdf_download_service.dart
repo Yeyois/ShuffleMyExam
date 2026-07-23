@@ -1,48 +1,33 @@
 import 'dart:io';
 
-import '../../core/utils/id_generator.dart';
 import '../../domain/models/exam.dart';
-import '../../domain/models/shuffled_pdf.dart';
-import '../../domain/repositories/shuffled_pdf_repository.dart';
 import 'shuffled_pdf_export_service.dart';
 
-/// Generates a shuffled PDF for an exam, retains it in the app's shuffled-PDF
-/// library directory, and records it in the [ShuffledPdfRepository] so it can
-/// be re-downloaded later. 100% offline.
-class ShuffledPdfLibraryService {
-  ShuffledPdfLibraryService({
+/// Generates a shuffled PDF for an exam and writes it to [outputDir] under a
+/// human-readable file name, ready to be handed to the system share/save
+/// sheet. Nothing is retained or indexed — the file exists only so the OS can
+/// copy it wherever the user chooses. 100% offline.
+class ShuffledPdfDownloadService {
+  ShuffledPdfDownloadService({
     required this.exportService,
-    required this.repository,
-    required this.libraryDir,
+    required this.outputDir,
   });
 
   final ShuffledPdfExportService exportService;
-  final ShuffledPdfRepository repository;
 
-  /// Directory where retained shuffled PDFs are stored.
-  final String libraryDir;
+  /// Scratch directory the generated PDF is written to (a cache/temp dir).
+  final String outputDir;
 
-  /// Generates a fresh shuffle of [exam], writes it to [libraryDir] under a
-  /// human-readable file name, records it, and returns the saved record.
-  Future<ShuffledPdf> generateAndSave(Exam exam) async {
+  /// Generates a fresh shuffle of [exam] and returns the written file.
+  Future<File> generate(Exam exam) async {
     final bytes = await exportService.generate(exam);
 
-    final dir = Directory(libraryDir);
+    final dir = Directory(outputDir);
     if (!await dir.exists()) await dir.create(recursive: true);
 
-    final id = generateId();
     final file = File('${dir.path}/${_fileName(exam.title)}');
     await file.writeAsBytes(bytes, flush: true);
-
-    final record = ShuffledPdf(
-      id: id,
-      examTitle: exam.title,
-      filePath: file.path,
-      sizeBytes: bytes.length,
-      createdAt: DateTime.now(),
-    );
-    await repository.save(record);
-    return record;
+    return file;
   }
 
   /// A safe, human-readable, collision-resistant file name. The timestamp keeps

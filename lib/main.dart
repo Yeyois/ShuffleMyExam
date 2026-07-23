@@ -8,25 +8,25 @@ import 'application/theme_mode_controller.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
 import 'data/local/hive_exam_repository.dart';
-import 'data/local/hive_shuffled_pdf_repository.dart';
 import 'presentation/screens/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   final repository = await HiveExamRepository.open();
-  final shuffledPdfRepository = await HiveShuffledPdfRepository.open();
   final documentsDir = await getApplicationDocumentsDirectory();
+  // Generated PDFs are throwaway: written to the cache dir purely so the
+  // system share/save sheet has a file to hand off.
+  final cacheDir = await getTemporaryDirectory();
 
   runApp(
     ProviderScope(
       overrides: [
         examRepositoryProvider.overrideWithValue(repository),
-        shuffledPdfRepositoryProvider.overrideWithValue(shuffledPdfRepository),
         imagesRootDirProvider
             .overrideWithValue('${documentsDir.path}/exam_images'),
-        shuffledLibraryDirProvider
-            .overrideWithValue('${documentsDir.path}/shuffled_pdfs'),
+        shuffledPdfOutputDirProvider
+            .overrideWithValue('${cacheDir.path}/shuffled_pdfs'),
       ],
       child: const MixExamApp(),
     ),
