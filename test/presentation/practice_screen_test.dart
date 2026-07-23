@@ -89,6 +89,36 @@ void main() {
     expect(find.text(AppStrings.answerWrong), findsNothing);
   });
 
+  testWidgets('a correct pick auto-advances to the next question after the '
+      'feedback has been seen', (tester) async {
+    await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
+    await tester.pump();
+
+    await tester.tap(find.text('16 ביט'));
+    await tester.pumpAndSettle();
+
+    // The feedback is still on the same question right after the tap.
+    expect(find.text(AppStrings.answerCorrect), findsOneWidget);
+    expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
+
+    // After the pause the flow moves on with no user action.
+    await tester.pump(const Duration(milliseconds: 1200));
+    await tester.pumpAndSettle();
+    expect(find.text(AppStrings.questionOf(2, 2)), findsOneWidget);
+  });
+
+  testWidgets('a wrong pick does not auto-advance', (tester) async {
+    await pumpScreen(tester, home: PracticeScreen(exam: mixedExam()));
+    await tester.pump();
+
+    await tester.tap(find.text('32 ביט'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text(AppStrings.questionOf(1, 2)), findsOneWidget);
+  });
+
   testWidgets('visual question: cropped image by default, full only after '
       'reveal, and no shuffle indicator of any kind', (tester) async {
     final exam = mixedExam();
