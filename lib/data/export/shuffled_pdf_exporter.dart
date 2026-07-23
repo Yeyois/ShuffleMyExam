@@ -42,9 +42,10 @@ class ShuffledPdfParams {
   final bool includeAnswerKey;
 }
 
-/// Rasterization scale (~180 dpi at 72pt/inch) — sharp enough to print,
-/// modest enough to keep page images in memory.
-const double _renderScale = 2.5;
+/// Rasterization scale (~144 dpi at 72pt/inch). Matches the proven visual
+/// renderer; sharp enough for a practice printout, modest enough to keep the
+/// many per-answer page renders within memory.
+const double _renderScale = 2.0;
 
 /// Builds a format-preserving, shuffled copy of the exam at
 /// [ShuffledPdfParams.originalPdfPath] and returns the PDF bytes.
@@ -114,35 +115,23 @@ Future<void> _composePage({
   final pageW = page.width;
   final pageH = page.height;
 
+  // Render the page ONCE. Every answer band and bullet is then relocated by
+  // redrawing this single bitmap offset + clipped to its destination — no
+  // per-region re-render (which, at ~2 renders/answer, exhausted pdfx and
+  // was very slow).
   final baseImage = await page.render(
     width: pageW * _renderScale,
     height: pageH * _renderScale,
     format: pdfx.PdfPageImageFormat.png,
-    backgroundColor: '#FFFFFF',
   );
   if (baseImage == null) return;
-
-  // Capture every answer band and every sequential bullet glyph from the
-  // clean original before we touch the output page.
-  final bandCrops = <QuestionReorder, List<PdfBitmap>>{};
-  final bulletCrops = <QuestionReorder, List<PdfBitmap>>{};
-  for (final q in questions) {
-    bandCrops[q] = [
-      for (final b in q.bands)
-        PdfBitmap(await _renderCrop(page, b.source, pageW, pageH)),
-    ];
-    bulletCrops[q] = [
-      for (final s in q.bullets)
-        PdfBitmap(await _renderCrop(page, s.source, pageW, pageH)),
-    ];
-  }
 
   output.pageSettings.margins.all = 0;
   output.pageSettings.size = Size(pageW, pageH);
   final outPage = output.pages.add();
   final g = outPage.graphics;
-
-  g.drawImage(PdfBitmap(baseImage.bytes), Rect.fromLTWH(0, 0, pageW, pageH));
+  final base = PdfBitmap(baseImage.bytes); // one instance, embedded once
+  g.drawImage(base, Rect.fromLTWH(0, 0, pageW, pageH));
 
   for (final q in questions) {
     // Clear the whole answers region, then restack the reordered bands.
@@ -151,49 +140,41 @@ Future<void> _composePage({
       brush: PdfBrushes.white,
       bounds: Rect.fromLTWH(r.left - 1, r.top - 1, r.width + 2, r.height + 2),
     );
-    final bands = bandCrops[q]!;
-    for (var i = 0; i < q.bands.length; i++) {
-      final t = q.bands[i].target;
-      g.drawImage(bands[i], Rect.fromLTWH(t.left, t.top, t.width, t.height));
+    for (final d in q.bands) {
+      _blit(g, base, d.source, d.target, pageW, pageH);
     }
     // Restamp bullets in sequence over the moved bands.
-    final bullets = bulletCrops[q]!;
-    for (var i = 0; i < q.bullets.length; i++) {
-      final s = q.bullets[i];
+    for (final s in q.bullets) {
+      final c = s.clear;
       g.drawRectangle(
         brush: PdfBrushes.white,
-        bounds: Rect.fromLTWH(
-            s.clear.left - 1, s.clear.top - 1, s.clear.width + 2, s.clear.height + 2),
+        bounds: Rect.fromLTWH(c.left - 1, c.top - 1, c.width + 2, c.height + 2),
       );
-      final t = s.target;
-      g.drawImage(bullets[i], Rect.fromLTWH(t.left, t.top, t.width, t.height));
+      _blit(g, base, s.source, s.target, pageW, pageH);
     }
   }
 }
 
-/// Renders just [box] (PDF points) of [page] to PNG bytes.
-Future<Uint8List> _renderCrop(
-  pdfx.PdfPage page,
-  PdfBox box,
-  double pageW,
-  double pageH,
-) async {
-  final img = await page.render(
-    width: pageW * _renderScale,
-    height: pageH * _renderScale,
-    format: pdfx.PdfPageImageFormat.png,
-    backgroundColor: '#FFFFFF',
-    cropRect: Rect.fromLTWH(
-      box.left * _renderScale,
-      box.top * _renderScale,
-      box.width * _renderScale,
-      box.height * _renderScale,
+/// Copies the [source] region of the full-page [base] bitmap onto [target] by
+/// drawing the whole page translated so `source` lands on `target`, clipped
+/// to `target`. Source and target share the same size, so pixels move 1:1
+/// with no scaling.
+void _blit(PdfGraphics g, PdfBitmap base, PdfBox source, PdfBox target,
+    double pageW, double pageH) {
+  final state = g.save();
+  g.setClip(
+    bounds: Rect.fromLTWH(target.left, target.top, target.width, target.height),
+  );
+  g.drawImage(
+    base,
+    Rect.fromLTWH(
+      target.left - source.left,
+      target.top - source.top,
+      pageW,
+      pageH,
     ),
   );
-  if (img == null) {
-    throw StateError('answer region render failed');
-  }
-  return img.bytes;
+  g.restore(state);
 }
 
 /// Appends the "מפתח תשובות" page listing the correct letter per question.

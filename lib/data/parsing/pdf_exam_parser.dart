@@ -504,6 +504,15 @@ abstract final class PdfExamParser {
   ) {
     if (extracted.length < 2) return null;
 
+    // Only reorder a clean, sequentially-lettered run (א, ב, ג, ד, …). A
+    // question with a nested sub-list — e.g. "four statements" א–ד followed
+    // by the real answers א–ד — parses as repeated letters; reordering those
+    // rows would scramble unrelated content and restamp duplicate bullets,
+    // so such questions are left untouched.
+    for (var k = 0; k < extracted.length; k++) {
+      if (extracted[k].letter != String.fromCharCode(0x05D0 + k)) return null;
+    }
+
     // Line bounds are unreliable on some RTL PDFs (the extractor reports a
     // line's left > right); word bounds are consistent, so all geometry here
     // is derived from words.
