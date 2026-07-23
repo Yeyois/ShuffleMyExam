@@ -8,6 +8,7 @@ import '../../application/theme_mode_controller.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
+import '../widgets/bird_trail/bird_trail_layer.dart';
 import 'practice_screen.dart';
 import 'processing_screen.dart';
 import 'shuffled_library_screen.dart';
@@ -54,54 +55,60 @@ class HomeScreen extends ConsumerWidget {
     final exams = ref.watch(examsProvider);
     final brightness = Theme.of(context).brightness;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(AppStrings.homeTitle),
-        actions: [
-          IconButton(
-            tooltip: AppStrings.openLibrary,
-            icon: const Icon(Icons.folder_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const ShuffledLibraryScreen(),
+    // The free space below the exam cards doubles as a playful canvas: a
+    // finger dragged through it trails glowing birds.
+    return BirdTrailLayer(
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(AppStrings.homeTitle),
+          actions: [
+            IconButton(
+              tooltip: AppStrings.openLibrary,
+              icon: const Icon(Icons.folder_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ShuffledLibraryScreen(),
+                ),
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'מצב תצוגה',
-            icon: Icon(brightness == Brightness.dark
-                ? Icons.light_mode_outlined
-                : Icons.dark_mode_outlined),
-            onPressed: () => ref
-                .read(themeModeControllerProvider.notifier)
-                .toggle(brightness),
-          ),
-        ],
+            IconButton(
+              tooltip: 'מצב תצוגה',
+              icon: Icon(brightness == Brightness.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined),
+              onPressed: () => ref
+                  .read(themeModeControllerProvider.notifier)
+                  .toggle(brightness),
+            ),
+          ],
+        ),
+        body: exams.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('$e')),
+          data: (list) => list.isEmpty
+              ? const _EmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 96, top: 8),
+                  itemCount: list.length,
+                  itemBuilder: (context, index) =>
+                      _ExamTile(exam: list[index], onDelete: _confirmDelete)
+                          .animate(delay: (index.clamp(0, 10) * 60).ms)
+                          .fadeIn(duration: Motion.medium)
+                          .slideY(begin: 0.25, curve: Motion.spring)
+                          .scaleXY(begin: 0.96, curve: Motion.easeOut),
+                ),
+        ),
+        floatingActionButton: TrailExclusion(
+          child: FloatingActionButton.extended(
+            onPressed: () => _importPdf(context, ref),
+            icon: const Icon(Icons.add),
+            label: const Text(AppStrings.importExam),
+          )
+              .animate(delay: 250.ms)
+              .slideY(begin: 1.4, curve: Motion.spring, duration: Motion.slow)
+              .fadeIn(),
+        ),
       ),
-      body: exams.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('$e')),
-        data: (list) => list.isEmpty
-            ? const _EmptyState()
-            : ListView.builder(
-                padding: const EdgeInsets.only(bottom: 96, top: 8),
-                itemCount: list.length,
-                itemBuilder: (context, index) =>
-                    _ExamTile(exam: list[index], onDelete: _confirmDelete)
-                        .animate(delay: (index.clamp(0, 10) * 60).ms)
-                        .fadeIn(duration: Motion.medium)
-                        .slideY(begin: 0.25, curve: Motion.spring)
-                        .scaleXY(begin: 0.96, curve: Motion.easeOut),
-              ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _importPdf(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text(AppStrings.importExam),
-      )
-          .animate(delay: 250.ms)
-          .slideY(begin: 1.4, curve: Motion.spring, duration: Motion.slow)
-          .fadeIn(),
     );
   }
 }
@@ -182,38 +189,40 @@ class _ExamTileState extends ConsumerState<_ExamTile> {
     // imported before retention can't be re-exported).
     final canShuffle = exam.originalPdfPath != null;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.quiz_outlined)),
-        title: Text(exam.title,
-            maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text('${exam.questions.length} שאלות'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (canShuffle)
+    return TrailExclusion(
+      child: Card(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.quiz_outlined)),
+          title: Text(exam.title,
+              maxLines: 2, overflow: TextOverflow.ellipsis),
+          subtitle: Text('${exam.questions.length} שאלות'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canShuffle)
+                IconButton(
+                  tooltip: AppStrings.shuffleAgain,
+                  icon: _shuffling
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.shuffle),
+                  onPressed: _shuffling ? null : _shuffle,
+                ),
               IconButton(
-                tooltip: AppStrings.shuffleAgain,
-                icon: _shuffling
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.shuffle),
-                onPressed: _shuffling ? null : _shuffle,
+                tooltip: AppStrings.deleteExam,
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => widget.onDelete(context, ref, exam),
               ),
-            IconButton(
-              tooltip: AppStrings.deleteExam,
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => widget.onDelete(context, ref, exam),
+            ],
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PracticeScreen(exam: exam),
             ),
-          ],
-        ),
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => PracticeScreen(exam: exam),
           ),
         ),
       ),
