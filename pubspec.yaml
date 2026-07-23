@@ -43,6 +43,7 @@ dependencies:
   syncfusion_flutter_pdf: ^33.2.13
   pdfx: ^2.9.2
   share_plus: ^12.0.2
+  flutter_animate: ^4.5.2
 
 dev_dependencies:
   flutter_test:

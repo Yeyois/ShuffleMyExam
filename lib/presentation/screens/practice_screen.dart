@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/practice_session_controller.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
 import '../widgets/text_question_card.dart';
 import '../widgets/visual_question_card.dart';
@@ -59,14 +60,24 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       appBar: AppBar(
         title: Text(exam.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(28),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              AppStrings.questionOf(
-                  _currentPage + 1, exam.questions.length),
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+          preferredSize: const Size.fromHeight(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                AppStrings.questionOf(
+                    _currentPage + 1, exam.questions.length),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _ProgressBar(
+                  value: (_currentPage + 1) / exam.questions.length,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
           ),
         ),
       ),
@@ -154,6 +165,32 @@ class _NavBar extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+/// A rounded progress bar whose fill glides to [value] whenever it changes.
+class _ProgressBar extends StatelessWidget {
+  const _ProgressBar({required this.value});
+
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: value.clamp(0.0, 1.0)),
+        duration: Motion.medium,
+        curve: Motion.easeOut,
+        builder: (context, v, _) => LinearProgressIndicator(
+          value: v,
+          minHeight: 8,
+          backgroundColor: scheme.surfaceContainerHighest,
+          valueColor: AlwaysStoppedAnimation<Color>(scheme.primary),
+        ),
+      ),
     );
   }
 }

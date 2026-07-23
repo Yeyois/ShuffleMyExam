@@ -137,6 +137,13 @@ void main() {
 
     // 1 of 2 correct.
     expect(find.text('50%'), findsOneWidget);
+    // The mistake breakdown sits below the fold — scroll it into view.
+    await tester.scrollUntilVisible(
+      find.textContaining('ALU הוא הרכיב הנכון'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.textContaining('ALU הוא הרכיב הנכון'), findsOneWidget);
 
     await tester.scrollUntilVisible(
@@ -197,6 +204,12 @@ void main() {
 
     // Only the single text question is scored: 1/1 = 100%.
     expect(find.text('100%'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.noMistakes),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text(AppStrings.noMistakes), findsOneWidget);
   });
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/motion.dart';
 import '../../domain/models/answer.dart';
 import '../../domain/models/question.dart';
 
@@ -86,7 +88,9 @@ class _FeedbackBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(correct ? Icons.check_circle : Icons.cancel, color: color),
+          Icon(correct ? Icons.check_circle : Icons.cancel, color: color)
+              .animate()
+              .scaleXY(begin: 0, curve: Motion.pop, duration: 600.ms),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -104,7 +108,11 @@ class _FeedbackBanner extends StatelessWidget {
             ),
         ],
       ),
-    );
+    )
+        .animate()
+        .fadeIn(duration: Motion.fast)
+        .slideY(begin: 0.5, curve: Motion.spring)
+        .scaleXY(begin: 0.9, curve: Motion.pop, duration: Motion.medium);
   }
 }
 
@@ -137,11 +145,15 @@ class _AnswerTile extends StatelessWidget {
     if (showCorrect) {
       tileColor = _correctGreen.withValues(alpha: 0.15);
       side = const BorderSide(color: _correctGreen, width: 2);
-      trailing = const Icon(Icons.check_circle, color: _correctGreen);
+      trailing = const Icon(Icons.check_circle, color: _correctGreen)
+          .animate()
+          .scaleXY(begin: 0, curve: Motion.pop, duration: 600.ms);
     } else if (showWrongPick) {
       tileColor = _wrongRed.withValues(alpha: 0.12);
       side = const BorderSide(color: _wrongRed, width: 2);
-      trailing = const Icon(Icons.cancel, color: _wrongRed);
+      trailing = const Icon(Icons.cancel, color: _wrongRed)
+          .animate()
+          .scaleXY(begin: 0, curve: Motion.pop, duration: 600.ms);
     } else if (selected) {
       tileColor = scheme.primaryContainer;
       side = BorderSide(color: scheme.primary, width: 2);
@@ -168,7 +180,7 @@ class _AnswerTile extends StatelessWidget {
       leadingColor = scheme.outline;
     }
 
-    return Card(
+    final Widget tile = Card(
       margin: EdgeInsets.zero,
       color: tileColor,
       shape: RoundedRectangleBorder(
@@ -191,5 +203,22 @@ class _AnswerTile extends StatelessWidget {
         ),
       ),
     );
+
+    // Playful reaction to the commit: the correct answer gives a little
+    // pop, a wrong pick shakes.
+    if (showWrongPick) {
+      return tile
+          .animate()
+          .shakeX(hz: 4, amount: 4, duration: 450.ms, curve: Curves.easeInOut);
+    }
+    if (showCorrect) {
+      return tile.animate().scaleXY(
+            begin: 0.96,
+            end: 1,
+            curve: Motion.pop,
+            duration: 550.ms,
+          );
+    }
+    return tile;
   }
 }

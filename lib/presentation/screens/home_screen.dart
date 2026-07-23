@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../application/providers.dart';
 import '../../application/theme_mode_controller.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
 import 'practice_screen.dart';
 import 'processing_screen.dart';
@@ -85,14 +87,21 @@ class HomeScreen extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: 96, top: 8),
                 itemCount: list.length,
                 itemBuilder: (context, index) =>
-                    _ExamTile(exam: list[index], onDelete: _confirmDelete),
+                    _ExamTile(exam: list[index], onDelete: _confirmDelete)
+                        .animate(delay: (index.clamp(0, 10) * 60).ms)
+                        .fadeIn(duration: Motion.medium)
+                        .slideY(begin: 0.25, curve: Motion.spring)
+                        .scaleXY(begin: 0.96, curve: Motion.easeOut),
               ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _importPdf(context, ref),
         icon: const Icon(Icons.add),
         label: const Text(AppStrings.importExam),
-      ),
+      )
+          .animate(delay: 250.ms)
+          .slideY(begin: 1.4, curve: Motion.spring, duration: Motion.slow)
+          .fadeIn(),
     );
   }
 }
@@ -109,13 +118,16 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.picture_as_pdf_outlined,
-                size: 64, color: Theme.of(context).colorScheme.outline),
+                    size: 64, color: Theme.of(context).colorScheme.outline)
+                .animate()
+                .scaleXY(begin: 0.4, curve: Motion.pop, duration: 800.ms)
+                .fadeIn(),
             const SizedBox(height: 16),
             Text(
               AppStrings.emptyHome,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            ).animate(delay: 250.ms).fadeIn().slideY(begin: 0.3),
           ],
         ),
       ),
