@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive-icon background: the same top-to-bottom seed-blue gradient the
+     generated square icons use (see tool/generate_app_icon.py). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:endColor="#003D63"
+        android:startColor="#1B8ACC"
+        android:type="linear" />
+</shape>
