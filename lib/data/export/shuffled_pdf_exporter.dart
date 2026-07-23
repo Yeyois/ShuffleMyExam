@@ -3,208 +3,216 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' show Rect, Size;
 
+import 'package:flutter/services.dart'
+    show BackgroundIsolateBinaryMessenger, RootIsolateToken;
+import 'package:pdfx/pdfx.dart' as pdfx;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-import '../../core/utils/answer_shuffler.dart';
-import '../../domain/models/exam.dart';
+import '../parsing/geometry.dart';
+import '../parsing/pdf_exam_parser.dart';
+import 'in_place_shuffle_planner.dart';
 
 /// Isolate-sendable inputs for [buildShuffledExamPdf].
 ///
-/// [regularFontBytes]/[boldFontBytes] must be a single TrueType face that
-/// covers Hebrew + Latin + digits + punctuation (DejaVu Sans) — syncfusion
-/// embeds exactly the font it is given, with no fallback, so a Hebrew-only
-/// face would render mixed-script exam text as tofu. Fonts are loaded from
-/// the asset bundle on the main isolate and passed in here because
-/// `rootBundle` is not available inside a `compute()` isolate.
+/// The exporter edits the *original* PDF ([originalPdfPath]) in place so the
+/// output keeps the source's exact formatting — it does not re-typeset the
+/// exam. [regularFontBytes]/[boldFontBytes] are used only for the appended
+/// answer-key page (Hebrew + Latin coverage, DejaVu Sans). [token] is needed
+/// because pdfx rasterizes pages over platform channels, which requires the
+/// binary messenger to be initialized inside the isolate.
 class ShuffledPdfParams {
   const ShuffledPdfParams({
-    required this.exam,
+    required this.originalPdfPath,
     required this.regularFontBytes,
     required this.boldFontBytes,
+    this.token,
     this.seed,
     this.includeAnswerKey = true,
   });
 
-  final Exam exam;
+  final String originalPdfPath;
   final Uint8List regularFontBytes;
   final Uint8List boldFontBytes;
+  final RootIsolateToken? token;
 
-  /// Optional seed so the printed form and its answer key stay consistent
-  /// and (for tests) reproducible. Null uses a fresh random each run.
+  /// Optional seed so the shuffled document and its answer key stay
+  /// consistent and (for tests) reproducible. Null uses a fresh random.
   final int? seed;
 
   final bool includeAnswerKey;
 }
 
-/// Builds a printable "shuffled" version of [ShuffledPdfParams.exam] and
-/// returns the PDF bytes. Heavy (font embedding + image decode + layout), so
-/// it is designed to run inside `compute()` — see `ShuffledPdfExportService`.
+/// Rasterization scale (~144 dpi at 72pt/inch). Matches the proven visual
+/// renderer; sharp enough for a practice printout, modest enough to keep the
+/// many per-answer page renders within memory.
+const double _renderScale = 2.0;
+
+/// Builds a format-preserving, shuffled copy of the exam at
+/// [ShuffledPdfParams.originalPdfPath] and returns the PDF bytes.
 ///
-/// Text questions are emitted with their answers reordered (correct never
-/// first, via [shuffleAnswers]) and lettered א/ב/ג/ד. Visual questions are
-/// emitted as their cropped body image only (answers omitted — they can't be
-/// reshuffled, and the full image would leak the Zero-Exam ordering). When
+/// Each original page is rasterized (so no underlying answer text remains to
+/// cheat from) and, for every reorderable text question, the answer bands
+/// are restacked in a new order and the א/ב/ג/ד bullets restamped in
+/// sequence from the original glyph pixels. Visual questions and questions
+/// without reorder geometry are left exactly as they were. When
 /// [ShuffledPdfParams.includeAnswerKey] is set, a final "מפתח תשובות" page
-/// lists the correct letter per text question (visual questions show "—").
+/// lists the correct letter per question.
+///
+/// Heavy (page rasterization + image compositing) and touches pdfx, so it is
+/// designed to run inside `compute()` — see `ShuffledPdfExportService`.
 Future<Uint8List> buildShuffledExamPdf(ShuffledPdfParams params) async {
-  final exam = params.exam;
+  final token = params.token;
+  if (token != null) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+  }
+
+  final bytes = await File(params.originalPdfPath).readAsBytes();
+  final structure = PdfExamParser.parseBytes(bytes);
   final rng = params.seed == null ? Random() : Random(params.seed);
+  final plan = planInPlaceShuffle(structure, random: rng);
 
-  final document = PdfDocument();
+  // Group the in-place redraws by page.
+  final drawsByPage = <int, List<QuestionReorder>>{};
+  for (final q in plan.questions) {
+    drawsByPage.putIfAbsent(q.pageIndex, () => []).add(q);
+  }
+
+  final output = PdfDocument();
+  final source = await pdfx.PdfDocument.openFile(params.originalPdfPath);
+  try {
+    for (var p = 0; p < source.pagesCount; p++) {
+      final page = await source.getPage(p + 1);
+      try {
+        await _composePage(
+          output: output,
+          page: page,
+          questions: drawsByPage[p] ?? const [],
+        );
+      } finally {
+        await page.close();
+      }
+    }
+  } finally {
+    await source.close();
+  }
+
+  if (params.includeAnswerKey) {
+    _appendAnswerKey(output, plan.answerKey, params);
+  }
+
+  final result = Uint8List.fromList(await output.save());
+  output.dispose();
+  return result;
+}
+
+/// Rasterizes [page], reorders any answer bands, and appends the result as a
+/// same-size page in [output].
+Future<void> _composePage({
+  required PdfDocument output,
+  required pdfx.PdfPage page,
+  required List<QuestionReorder> questions,
+}) async {
+  final pageW = page.width;
+  final pageH = page.height;
+
+  // Render the page ONCE. Every answer band and bullet is then relocated by
+  // redrawing this single bitmap offset + clipped to its destination — no
+  // per-region re-render (which, at ~2 renders/answer, exhausted pdfx and
+  // was very slow).
+  final baseImage = await page.render(
+    width: pageW * _renderScale,
+    height: pageH * _renderScale,
+    format: pdfx.PdfPageImageFormat.png,
+  );
+  if (baseImage == null) return;
+
+  output.pageSettings.margins.all = 0;
+  output.pageSettings.size = Size(pageW, pageH);
+  final outPage = output.pages.add();
+  final g = outPage.graphics;
+  final base = PdfBitmap(baseImage.bytes); // one instance, embedded once
+  g.drawImage(base, Rect.fromLTWH(0, 0, pageW, pageH));
+
+  for (final q in questions) {
+    // Clear the whole answers region, then restack the reordered bands.
+    final r = q.region;
+    g.drawRectangle(
+      brush: PdfBrushes.white,
+      bounds: Rect.fromLTWH(r.left - 1, r.top - 1, r.width + 2, r.height + 2),
+    );
+    for (final d in q.bands) {
+      _blit(g, base, d.source, d.target, pageW, pageH);
+    }
+    // Restamp bullets in sequence over the moved bands.
+    for (final s in q.bullets) {
+      final c = s.clear;
+      g.drawRectangle(
+        brush: PdfBrushes.white,
+        bounds: Rect.fromLTWH(c.left - 1, c.top - 1, c.width + 2, c.height + 2),
+      );
+      _blit(g, base, s.source, s.target, pageW, pageH);
+    }
+  }
+}
+
+/// Copies the [source] region of the full-page [base] bitmap onto [target] by
+/// drawing the whole page translated so `source` lands on `target`, clipped
+/// to `target`. Source and target share the same size, so pixels move 1:1
+/// with no scaling.
+void _blit(PdfGraphics g, PdfBitmap base, PdfBox source, PdfBox target,
+    double pageW, double pageH) {
+  final state = g.save();
+  g.setClip(
+    bounds: Rect.fromLTWH(target.left, target.top, target.width, target.height),
+  );
+  g.drawImage(
+    base,
+    Rect.fromLTWH(
+      target.left - source.left,
+      target.top - source.top,
+      pageW,
+      pageH,
+    ),
+  );
+  g.restore(state);
+}
+
+/// Appends the "מפתח תשובות" page listing the correct letter per question.
+void _appendAnswerKey(
+  PdfDocument document,
+  Map<int, String> answerKey,
+  ShuffledPdfParams params,
+) {
   document.pageSettings.margins.all = 40;
+  document.pageSettings.size = const Size(595, 842); // A4
+  final page = document.pages.add();
+  final size = page.getClientSize();
 
-  final titleFont = PdfTrueTypeFont(params.boldFontBytes, 18);
-  final headerFont = PdfTrueTypeFont(params.boldFontBytes, 13);
-  final bodyFont = PdfTrueTypeFont(params.regularFontBytes, 12);
+  final titleFont = PdfTrueTypeFont(params.boldFontBytes, 16);
   final keyFont = PdfTrueTypeFont(params.regularFontBytes, 12);
-  final keyTitleFont = PdfTrueTypeFont(params.boldFontBytes, 16);
-
   final rtl = PdfStringFormat(
     alignment: PdfTextAlignment.right,
     textDirection: PdfTextDirection.rightToLeft,
   );
 
-  final cursor = _Cursor(document);
+  final numbers = answerKey.keys.toList()..sort();
+  final buffer = StringBuffer();
+  for (final n in numbers) {
+    buffer.writeln('$n. ${answerKey[n]}');
+  }
 
-  // Title block.
-  cursor.drawText(exam.title, titleFont, rtl, spacingAfter: 6);
-  cursor.drawText(
-    'טופס מעורבב · ${exam.questions.length} שאלות',
-    bodyFont,
-    rtl,
-    spacingAfter: 18,
+  page.graphics.drawString('מפתח תשובות', titleFont,
+      brush: PdfBrushes.black,
+      bounds: Rect.fromLTWH(0, 0, size.width, 30),
+      format: rtl);
+  PdfTextElement(
+    text: buffer.toString().trimRight(),
+    font: keyFont,
+    brush: PdfBrushes.black,
+    format: rtl,
+  ).draw(
+    page: page,
+    bounds: Rect.fromLTWH(0, 36, size.width, size.height - 36),
+    format: PdfLayoutFormat(layoutType: PdfLayoutType.paginate),
   );
-
-  // questionNumber -> correct Hebrew letter (or '—' for visual questions).
-  final answerKey = <int, String>{};
-
-  for (var i = 0; i < exam.questions.length; i++) {
-    final q = exam.questions[i];
-    final number = i + 1;
-
-    // Keep a question header from dangling alone at the page bottom.
-    cursor.ensureSpace(90);
-    cursor.drawText('שאלה $number', headerFont, rtl, spacingAfter: 6);
-
-    if (q.isShufflable && q.textAnswers.length >= 2) {
-      if (q.questionText.trim().isNotEmpty) {
-        cursor.drawText(q.questionText, bodyFont, rtl, spacingAfter: 8);
-      }
-      final shuffled = shuffleAnswers(q.textAnswers, random: rng);
-      for (var a = 0; a < shuffled.length; a++) {
-        final letter = _hebrewLetter(a);
-        if (shuffled[a].isOriginalCorrect) answerKey[number] = letter;
-        cursor.drawText('$letter. ${shuffled[a].text}', bodyFont, rtl,
-            spacingAfter: 4);
-      }
-    } else {
-      // Visual question: cropped body image only, no answers.
-      answerKey[number] = '—';
-      final drew = cursor.tryDrawImage(q.croppedImageUrl);
-      if (!drew && q.questionText.trim().isNotEmpty) {
-        cursor.drawText(q.questionText, bodyFont, rtl, spacingAfter: 4);
-      }
-    }
-    cursor.advance(16);
-  }
-
-  if (params.includeAnswerKey) {
-    cursor.newPage();
-    cursor.drawText('מפתח תשובות', keyTitleFont, rtl, spacingAfter: 12);
-    for (var i = 0; i < exam.questions.length; i++) {
-      final number = i + 1;
-      cursor.drawText('$number. ${answerKey[number] ?? '—'}', keyFont, rtl,
-          spacingAfter: 4);
-    }
-  }
-
-  final bytes = Uint8List.fromList(await document.save());
-  document.dispose();
-  return bytes;
-}
-
-/// א, ב, ג, ד, … for a 0-based answer index.
-String _hebrewLetter(int index) => String.fromCharCode(0x05D0 + index);
-
-/// A top-of-page write cursor that auto-paginates. All bounds are in
-/// client-area coordinates (origin inside the page margins).
-class _Cursor {
-  _Cursor(this.document) {
-    page = document.pages.add();
-    _size = page.getClientSize();
-  }
-
-  final PdfDocument document;
-  late PdfPage page;
-  late Size _size;
-  double y = 0;
-
-  double get _remaining => _size.height - y;
-
-  void advance(double dy) => y += dy;
-
-  /// Start a fresh page if less than [minHeight] room remains.
-  void ensureSpace(double minHeight) {
-    if (_remaining < minHeight) newPage();
-  }
-
-  void newPage() {
-    page = document.pages.add();
-    y = 0;
-  }
-
-  void drawText(String text, PdfFont font, PdfStringFormat format,
-      {double spacingAfter = 0}) {
-    // A near-full page can leave no room; paginate manually first.
-    if (_remaining < font.height) newPage();
-    final element =
-        PdfTextElement(text: text, font: font, format: format, brush: PdfBrushes.black);
-    final result = element.draw(
-      page: page,
-      bounds: Rect.fromLTWH(0, y, _size.width, _size.height - y),
-      format: PdfLayoutFormat(
-        layoutType: PdfLayoutType.paginate,
-        breakType: PdfLayoutBreakType.fitElement,
-      ),
-    );
-    if (result != null) {
-      page = result.page;
-      y = result.bounds.bottom + spacingAfter;
-    } else {
-      y += font.height + spacingAfter;
-    }
-  }
-
-  /// Draws the image at [path] fit to the content width. Returns false if the
-  /// path is null/missing/unreadable so the caller can fall back to text.
-  bool tryDrawImage(String? path) {
-    if (path == null) return false;
-    final Uint8List data;
-    try {
-      final file = File(path);
-      if (!file.existsSync()) return false;
-      data = file.readAsBytesSync();
-    } on Object {
-      return false;
-    }
-    final PdfBitmap bitmap;
-    try {
-      bitmap = PdfBitmap(data);
-    } on Object {
-      return false;
-    }
-
-    var drawW = _size.width;
-    var drawH = bitmap.height * (drawW / bitmap.width);
-    if (drawH > _size.height) {
-      final s = _size.height / drawH;
-      drawW *= s;
-      drawH *= s;
-    }
-    if (_remaining < drawH) newPage();
-    final x = (_size.width - drawW) / 2; // centered
-    page.graphics.drawImage(bitmap, Rect.fromLTWH(x, y, drawW, drawH));
-    y += drawH;
-    return true;
-  }
 }

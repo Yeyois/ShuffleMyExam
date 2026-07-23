@@ -1,0 +1,232 @@
+================================================================================
+shufflePdf — PROJECT EXPLANATION
+================================================================================
+
+--------------------------------------------------------------------------------
+PART 1 — WHAT THIS PROJECT IS
+--------------------------------------------------------------------------------
+
+shufflePdf — an exam-answer shuffler
+====================================
+
+It takes a SOLVED Hebrew multiple-choice exam PDF (where the correct answer is
+always listed first) and produces a PRACTICE VERSION with the answers shuffled,
+plus an answer key telling you where the correct answer moved to. The point:
+turn an answer sheet back into a usable practice test.
+
+How it works (shuffle_exam.py — the core)
+-----------------------------------------
+
+Using PyMuPDF (fitz) to read and edit the PDF:
+
+  1. Parse questions — finds each question by its bold "שאלה מספר" ("question
+     number") header, then locates the answer rows by the Hebrew letter markers
+     א. ב. ג. ד. sitting at the right margin (RTL layout).
+
+  2. Capture answers as images — each answer's text region is rendered to a
+     high-res image (4x zoom, ~288 dpi) BEFORE any editing.
+
+  3. True deletion — the original answer text is removed via redaction
+     annotations (not just covered with a white box), so you CAN'T cheat by
+     selecting the underlying text.
+
+  4. Shuffle — the answer images are pasted back into new slots, with the letter
+     markers (א ב ג ד) staying put. The originally-correct answer (slot 0) is
+     forced to move somewhere else.
+
+  5. Outputs two files next to the original:
+       - ..._shuffled.pdf  — the practice exam
+       - ..._key.txt       — the answer key (the new letter now holding the
+                             correct answer)
+
+It also handles edge cases: questions with MULTI-LINE answers are skipped (can't
+cleanly swap unequal-height regions), and answers that reference positions/
+letters ("all of the above", "none of the above", "answers א and ב") are FLAGGED
+for manual review since shuffling breaks their logic.
+
+The three ways to run it
+------------------------
+
+  - shuffle_gui.py — a small Tkinter desktop GUI: pick a PDF, click Shuffle.
+  - bot.py — a Telegram bot wrapper. A friend sends the bot a solved PDF and gets
+    the shuffled version + key back. Handles the 20 MB Telegram limit, cleans up
+    temp files, no storage.
+  - CLI — python3 shuffle_exam.py "exam.pdf" [--seed N].
+
+Supporting files
+----------------
+
+  - inspect_pdf.py — a debugging tool that dumps each PDF text line's position,
+    font, and direction, used to reverse-engineer the exam's layout.
+  - Dockerfile + DEPLOY.md — package the bot into a container and deploy it free
+    on Railway / Koyeb / Fly.io (long-polling, so no public URL needed).
+  - requirements.txt — python-telegram-bot + PyMuPDF.
+  - The .pdf / _shuffled.pdf / _key.txt files are a real sample exam (תשפ״ה,
+    semester B) and its generated outputs.
+
+The design is deliberately layered: all the PDF logic lives in
+shuffle_exam.shuffle_exam(), and the GUI, bot, and CLI are just thin front-ends
+over that one function.
+
+
+--------------------------------------------------------------------------------
+PART 2 — WALKTHROUGH OF THE SHUFFLE AND REDACTION LOGIC
+--------------------------------------------------------------------------------
+
+A detailed walkthrough following the data as it flows through shuffle_exam.py.
+
+Step 1: Find the answer rows (parse_questions, lines 94-118)
+-----------------------------------------------------------
+
+Before anything can be shuffled, the code needs to know WHERE each answer sits on
+the page. It scans every text line and keys off two signals:
+
+    if ln["bold"] and "שאלה" in text and "מספר" in text:
+        current = {"page": pno, "markers": []}   # a new question begins
+
+    if current is not None and norm(text) in MARKER_SET and x0 > MARKER_MIN_X:
+        letter = norm(text)[0]
+        current["markers"].append({"letter": letter, "bbox": ln["bbox"]})
+
+  - A BOLD line containing שאלה + מספר opens a new question.
+  - A line whose stripped text is exactly א./ב./ג./ד. AND whose left edge
+    x0 > 500 (MARKER_MIN_X) is an answer marker. The x-check matters because this
+    is a right-to-left page — the letter markers live way over at the right
+    margin, so their x-coordinate is large. That filters out any incidental א.
+    appearing inside body text.
+
+Each marker stores its bbox (x0, y0, x1, y1). Questions with fewer than 2 markers
+are dropped (line 118). So the key insight: THE MARKERS ARE THE ANCHORS, and
+their y-positions define the rows.
+
+Step 2: Turn markers into content bands (build_bands, lines 121-141)
+-------------------------------------------------------------------
+
+A marker is just the letter. The actual answer TEXT sits to the LEFT of the
+marker (RTL) and BETWEEN one marker's baseline and the next. build_bands computes
+a rectangle for each answer:
+
+    markers = sorted(question["markers"], key=lambda m: m["bbox"][1])  # top->bottom
+    tops = [m["bbox"][1] for m in markers]
+    spacings = [tops[i + 1] - tops[i] for i in range(len(tops) - 1)]
+    med = statistics.median(spacings) if spacings else 14.0
+    content_right = min(m["bbox"][0] for m in markers) - 0.5
+
+  - tops = the y-coordinate where each answer row starts.
+  - content_right = just left of the leftmost marker — the answers never overlap
+    the markers themselves.
+  - For each answer, the band spans from this marker's top down to the NEXT
+    marker's top (line 136). The last answer has no "next," so it uses med (the
+    median row spacing) as its height — a reasonable guess for how tall the final
+    row is.
+
+    bands.append(fitz.Rect(LEFT_BOUND, top - PAD_TOP, content_right, bottom - PAD_TOP))
+
+So each band is (48, top-2, content_right, bottom-2): the full horizontal answer
+strip, with 2pt of vertical padding (PAD_TOP) so letter ascenders/descenders
+aren't clipped.
+
+The uniformity gate:
+
+    heights = [b.height for b in bands]
+    uniform = (max(heights) - min(heights)) <= 4.0
+
+This is the safety check. If all rows are within 4pt of the same height, the
+answers are single-line and interchangeable — a clean swap is possible. If one
+answer wraps to two lines, its band is much taller, uniform is False, and back in
+the main loop that question is SKIPPED and left untouched (lines 173-176). This
+is what prevents the tool from mangling a tall answer by squashing it into a
+short slot.
+
+Step 3: Capture, then delete, then repaste (the heart of it, lines 182-205)
+--------------------------------------------------------------------------
+
+This is where order-of-operations is everything. The sequence:
+
+    # 1. CAPTURE — snapshot every answer's pixels while the page is still intact
+    mat = fitz.Matrix(ZOOM, ZOOM)                       # 4x zoom ~ 288 dpi
+    pixmaps = [page.get_pixmap(clip=b, matrix=mat, alpha=False) for b in bands]
+
+    # 2. PERMUTE — decide who goes where
+    order = list(range(n))
+    while True:
+        rng.shuffle(order)
+        if order.index(0) != 0:      # correct answer (index 0) must NOT stay in slot 0
+            break
+    correct_slot = order.index(0)
+
+    # 3. REDACT — truly erase the original text
+    for b in bands:
+        page.add_redact_annot(b, fill=(1, 1, 1))
+    page.apply_redactions()
+
+    # 4. REPASTE — drop the captured images into their new slots
+    for slot in range(n):
+        page.insert_image(bands[slot], pixmap=pixmaps[order[slot]],
+                          keep_proportion=False)
+
+Walking through each piece:
+
+CAPTURE must come first. Every answer is rendered to a Pixmap (a bitmap image)
+BEFORE any modification. If you deleted text first, you'd have nothing left to
+capture. The 4x matrix means the image is captured at 4x resolution so it still
+looks crisp when pasted back — no visible blur.
+
+THE PERMUTATION. order is a list where order[slot] = which original answer's
+image goes into that slot. rng.shuffle randomizes it, and the while loop re-rolls
+until answer 0 (the correct one, which was originally first) lands somewhere
+other than slot 0. order.index(0) then tells you which slot the correct answer
+ended up in — that becomes the answer key entry (HEB_ORDER[correct_slot], line
+194). The rng comes from random.Random(seed), so passing --seed N makes the
+shuffle reproducible.
+
+REDACTION — why it's "true deletion." This is the anti-cheat core, and the
+distinction the docstring stresses:
+
+    page.add_redact_annot(b, fill=(1, 1, 1))
+    page.apply_redactions()
+
+A redaction annotation isn't a white rectangle drawn ON TOP of the text —
+apply_redactions() physically removes the underlying text glyphs and images
+inside each band from the PDF content stream, then fills the area white. So if
+someone opens the shuffled PDF and tries to SELECT/COPY the text or run it
+through a text extractor, there's nothing there — the original answer text is
+gone from the file, not just hidden. Contrast with a naive "cover it with a white
+box" approach, where the text still lives underneath and Ctrl+A -> copy would
+leak the original ordering.
+
+REPASTE as images. Finally each slot gets its new answer AS A PICTURE
+(insert_image with the pixmap), positioned in bands[slot]. keep_proportion=False
+forces the image to exactly fill the band rectangle — safe precisely because the
+uniformity gate guaranteed all bands are the same size, so there's no distortion.
+Because the answers are now flattened images, the shuffled PDF has NO selectable
+answer text at all — reinforcing the anti-cheat property.
+
+Why the markers stay put
+------------------------
+
+Notice the markers (א ב ג ד) are never touched — the bands start at
+content_right, just left of them. So visually the letters stay in order down the
+page; only the CONTENT beside each letter moves. That's exactly what you want:
+the student sees א, ב, ג, ד in normal order, but the correct answer is no longer
+next to א.
+
+The two escape hatches
+----------------------
+
+The code refuses to blindly shuffle when it might produce something wrong:
+
+  1. Multi-line answers (uniform == False) -> skipped entirely, recorded in the
+     key as לא עורבב (not shuffled).
+
+  2. Position/letter-referencing answers (POSITION_HINTS, lines 53-64) — things
+     like "all of the above" or "answers א and ב." These are STILL shuffled, but
+     flagged with ⚠ בדוק ידנית ("check manually") in the key, because "all of the
+     above" no longer makes sense once it's not in the last position.
+
+So the flow end-to-end for one question is: locate markers -> build equal-height
+bands -> snapshot pixels -> roll a derangement of slot 0 -> hard-delete originals
+-> paste snapshots into shuffled slots -> record the new home of the correct
+answer.
+
+================================================================================

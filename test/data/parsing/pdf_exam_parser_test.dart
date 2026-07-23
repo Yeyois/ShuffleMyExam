@@ -31,6 +31,21 @@ double bulletLineTop(List<int> bytes, String bullet, {double after = 0}) {
   fail('no line starting with $bullet found');
 }
 
+/// The physical left-X of the [bullet] marker word on its answer line.
+double bulletWordLeft(List<int> bytes, String bullet) {
+  final document = PdfDocument(inputBytes: bytes);
+  try {
+    for (final line in PdfTextExtractor(document).extractTextLines()) {
+      for (final w in line.wordCollection) {
+        if (w.text.trim() == bullet) return w.bounds.left;
+      }
+    }
+  } finally {
+    document.dispose();
+  }
+  fail('no word "$bullet" found');
+}
+
 void main() {
   group('PdfExamParser — pure text exam', () {
     test('finds all questions with bidi-corrected text and answers', () {
@@ -53,6 +68,35 @@ void main() {
       expect(q2.answers.first.text, 'ALU הוא הרכיב הנכון');
       expect(q2.answers.first.isOriginalCorrect, isTrue);
       expect(q2.answers, hasLength(4));
+    });
+
+    test('captures tiling answer bands and their bullet glyph boxes', () {
+      final bytes = PdfFixtures.textOnlyExam();
+      final structure = PdfExamParser.parseBytes(bytes);
+      final q1 = structure.questions[0];
+
+      final bands = q1.answerBands;
+      final bullets = q1.answerBullets;
+      expect(bands, isNotNull, reason: 'four answers → reorderable in place');
+      expect(bands, hasLength(4));
+      expect(bullets, hasLength(4));
+
+      // Bands tile the region: each starts where the previous ends, no gaps
+      // or overlaps, so they can be restacked without reflow.
+      for (var i = 1; i < bands!.length; i++) {
+        expect(bands[i].top, closeTo(bands[i - 1].bottom, 0.01));
+        expect(bands[i].left, bands.first.left);
+        expect(bands[i].width, bands.first.width);
+      }
+
+      // Each bullet glyph sits at the right edge of its band and aligns with
+      // the detected "א." position for the first answer.
+      final alephLeft = bulletWordLeft(bytes, 'א.');
+      expect(bullets!.first.left, closeTo(alephLeft, 1.0));
+      for (var i = 0; i < 4; i++) {
+        expect(bullets[i].top, greaterThanOrEqualTo(bands[i].top - 0.5));
+        expect(bullets[i].bottom, lessThanOrEqualTo(bands[i].bottom + 0.5));
+      }
     });
   });
 
@@ -146,6 +190,11 @@ void main() {
       expect(q2.isShufflable, isTrue);
       expect(q2.answers.map((a) => a.text).toList(),
           ['16 ביט', '8 ביט', '32 ביט', '64 ביט']);
+
+      // Degenerate word positions can't locate the bullet glyph, so these
+      // questions carry no reorder geometry — the exporter leaves them as-is.
+      expect(q1.answerBands, isNull);
+      expect(q2.answerBands, isNull);
     });
 
     test('question drafts survive isolate-style JSON round-trip', () {

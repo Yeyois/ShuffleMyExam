@@ -119,10 +119,18 @@ class ExamImportService {
       throw const ExamParseException('no questions found in document');
     }
 
+    final examDir = '$imagesRootDir/$examId';
+
+    // Retain the original PDF so the exporter can produce a
+    // format-preserving, in-place shuffled copy later.
+    await Directory(examDir).create(recursive: true);
+    final retainedPdfPath = '$examDir/original.pdf';
+    await File(pdfPath).copy(retainedPdfPath);
+
     final images = await renderVisualQuestions(
       structure: structure,
       pdfPath: pdfPath,
-      imagesDir: '$imagesRootDir/$examId',
+      imagesDir: examDir,
     );
 
     final questions = <Question>[];
@@ -140,7 +148,12 @@ class ExamImportService {
       );
     }
 
-    return Exam(id: examId, title: title, questions: questions);
+    return Exam(
+      id: examId,
+      title: title,
+      questions: questions,
+      originalPdfPath: retainedPdfPath,
+    );
   }
 
   /// Renders visual questions in a background isolate. Overridable so
