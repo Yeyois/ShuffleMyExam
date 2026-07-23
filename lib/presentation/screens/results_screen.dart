@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../application/practice_results.dart';
 import '../../application/practice_session_controller.dart';
 import '../../core/constants/app_strings.dart';
+import '../../core/theme/motion.dart';
 import '../../domain/models/exam.dart';
+import '../widgets/confetti_burst.dart';
+import '../widgets/score_ring.dart';
 
 /// Final score plus a breakdown of every mistake (selected answer in red,
 /// correct answer in green). Only text questions are scored.
@@ -23,49 +27,72 @@ class ResultsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final results = PracticeResults.from(exam, session);
+    final celebrate = results.totalScored > 0 && results.percentage >= 80;
 
     return Scaffold(
       appBar: AppBar(title: const Text(AppStrings.resultsTitle)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: Stack(
         children: [
-          _ScoreHeader(results: results),
-          const SizedBox(height: 16),
-          _StatsCard(results: results),
-          const SizedBox(height: 24),
-          if (results.mistakes.isEmpty && results.totalScored > 0)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Row(
-                  children: [
-                    const Icon(Icons.emoji_events_outlined,
-                        color: _correctGreen, size: 32),
-                    const SizedBox(width: 12),
-                    Text(AppStrings.noMistakes,
-                        style: Theme.of(context).textTheme.titleMedium),
-                  ],
-                ),
-              ),
-            )
-          else if (results.mistakes.isNotEmpty) ...[
-            Text(AppStrings.mistakesTitle,
-                style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            for (final mistake in results.mistakes)
-              _MistakeCard(mistake: mistake),
-          ],
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: () =>
-                Navigator.of(context).popUntil((route) => route.isFirst),
-            icon: const Icon(Icons.home_outlined),
-            label: const Text(AppStrings.backToHome),
+          ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _ScoreHeader(results: results),
+              const SizedBox(height: 16),
+              _StatsCard(results: results),
+              const SizedBox(height: 24),
+              if (results.mistakes.isEmpty && results.totalScored > 0)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.emoji_events_outlined,
+                            color: _correctGreen, size: 32),
+                        const SizedBox(width: 12),
+                        Text(AppStrings.noMistakes,
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ],
+                    ),
+                  ),
+                )
+                    .animate()
+                    .fadeIn(duration: Motion.medium)
+                    .scaleXY(begin: 0.9, curve: Motion.spring)
+              else if (results.mistakes.isNotEmpty) ...[
+                Text(AppStrings.mistakesTitle,
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                for (var i = 0; i < results.mistakes.length; i++)
+                  _MistakeCard(mistake: results.mistakes[i])
+                      .animate(delay: (500 + i * 90).ms)
+                      .fadeIn(duration: Motion.medium)
+                      .slideY(begin: 0.2, curve: Motion.spring),
+              ],
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).popUntil((route) => route.isFirst),
+                icon: const Icon(Icons.home_outlined),
+                label: const Text(AppStrings.backToHome),
+              ).animate(delay: 700.ms).fadeIn().slideY(begin: 0.3),
+            ],
           ),
+          if (celebrate)
+            const Positioned.fill(
+              child: ConfettiBurst(),
+            ),
         ],
       ),
     );
   }
+}
+
+/// Headline that matches how well the student did.
+String _headline(int percentage) {
+  if (percentage >= 90) return 'מצוין! 🎉';
+  if (percentage >= 75) return 'כל הכבוד! 👏';
+  if (percentage >= 50) return 'יפה מאוד!';
+  return 'ממשיכים להתאמן! 💪';
 }
 
 class _ScoreHeader extends StatelessWidget {
@@ -75,25 +102,32 @@ class _ScoreHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(vertical: 28),
         child: Column(
           children: [
+            ScoreRing(percentage: results.percentage)
+                .animate()
+                .scaleXY(begin: 0.7, curve: Motion.pop, duration: 900.ms)
+                .fadeIn(duration: Motion.fast),
+            const SizedBox(height: 16),
             Text(
-              '${results.percentage}%',
+              _headline(results.percentage),
               style: Theme.of(context)
                   .textTheme
-                  .displayMedium
-                  ?.copyWith(color: scheme.primary,
-                      fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
+                  .headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
+            ).animate(delay: 650.ms).fadeIn().scaleXY(
+                  begin: 0.5,
+                  curve: Motion.pop,
+                  duration: 700.ms,
+                ),
+            const SizedBox(height: 6),
             Text(
               '${results.correctCount} מתוך ${results.totalScored} תשובות נכונות',
               style: Theme.of(context).textTheme.bodyLarge,
-            ),
+            ).animate(delay: 800.ms).fadeIn(),
           ],
         ),
       ),
@@ -108,6 +142,35 @@ class _StatsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rows = <Widget>[
+      _StatRow(
+        icon: Icons.check_circle,
+        color: ResultsScreen._correctGreen,
+        label: AppStrings.statCorrect,
+        value: results.correctCount,
+      ),
+      _StatRow(
+        icon: Icons.cancel,
+        color: ResultsScreen._wrongRed,
+        label: AppStrings.statWrong,
+        value: results.wrongCount,
+      ),
+      if (results.unansweredCount > 0)
+        _StatRow(
+          icon: Icons.remove_circle_outline,
+          color: Theme.of(context).colorScheme.outline,
+          label: AppStrings.statUnanswered,
+          value: results.unansweredCount,
+        ),
+      if (results.visualCount > 0)
+        _StatRow(
+          icon: Icons.image_outlined,
+          color: Theme.of(context).colorScheme.secondary,
+          label: AppStrings.statVisual,
+          value: results.visualCount,
+        ),
+    ];
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -117,36 +180,15 @@ class _StatsCard extends StatelessWidget {
             Text(AppStrings.statsTitle,
                 style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
-            _StatRow(
-              icon: Icons.check_circle,
-              color: ResultsScreen._correctGreen,
-              label: AppStrings.statCorrect,
-              value: results.correctCount,
-            ),
-            _StatRow(
-              icon: Icons.cancel,
-              color: ResultsScreen._wrongRed,
-              label: AppStrings.statWrong,
-              value: results.wrongCount,
-            ),
-            if (results.unansweredCount > 0)
-              _StatRow(
-                icon: Icons.remove_circle_outline,
-                color: Theme.of(context).colorScheme.outline,
-                label: AppStrings.statUnanswered,
-                value: results.unansweredCount,
-              ),
-            if (results.visualCount > 0)
-              _StatRow(
-                icon: Icons.image_outlined,
-                color: Theme.of(context).colorScheme.secondary,
-                label: AppStrings.statVisual,
-                value: results.visualCount,
-              ),
+            for (var i = 0; i < rows.length; i++)
+              rows[i]
+                  .animate(delay: (900 + i * 110).ms)
+                  .fadeIn(duration: Motion.medium)
+                  .slideX(begin: 0.2, curve: Motion.spring),
           ],
         ),
       ),
-    );
+    ).animate(delay: 250.ms).fadeIn().slideY(begin: 0.15, curve: Motion.easeOut);
   }
 }
 

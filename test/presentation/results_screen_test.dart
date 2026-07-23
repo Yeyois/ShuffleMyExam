@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jct_mixexam/application/practice_session_controller.dart';
 import 'package:jct_mixexam/core/constants/app_strings.dart';
@@ -27,11 +28,19 @@ void main() {
       tester,
       home: ResultsScreen(exam: twoTextQuestions(), session: session),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('50%'), findsOneWidget);
     expect(find.text('1 מתוך 2 תשובות נכונות'), findsOneWidget);
     expect(find.text(AppStrings.mistakesTitle), findsOneWidget);
+
+    // The mistake card sits below the fold — scroll it into view.
+    await tester.scrollUntilVisible(
+      find.textContaining('32 ביט'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
 
     // Wrong answer text (32 ביט) and correct (16 ביט) both shown.
     expect(find.textContaining('32 ביט'), findsOneWidget);
@@ -48,9 +57,15 @@ void main() {
       tester,
       home: ResultsScreen(exam: twoTextQuestions(), session: session),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('100%'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text(AppStrings.noMistakes),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text(AppStrings.noMistakes), findsOneWidget);
     expect(find.text(AppStrings.mistakesTitle), findsNothing);
   });
@@ -66,7 +81,7 @@ void main() {
       tester,
       home: ResultsScreen(exam: twoTextQuestions(), session: session),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text(AppStrings.statsTitle), findsOneWidget);
     expect(find.text(AppStrings.statCorrect), findsOneWidget);
@@ -86,9 +101,15 @@ void main() {
       tester,
       home: ResultsScreen(exam: twoTextQuestions(), session: session),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('50%'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.textContaining('לא נבחרה תשובה'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.textContaining('לא נבחרה תשובה'), findsOneWidget);
   });
 }

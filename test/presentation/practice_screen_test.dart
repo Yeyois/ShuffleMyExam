@@ -63,7 +63,7 @@ void main() {
 
     // Tap a wrong answer (correct is '16 ביט').
     await tester.tap(find.text('32 ביט'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Immediate "wrong" feedback, and the correct answer gets the green check.
     expect(find.text(AppStrings.answerWrong), findsOneWidget);
@@ -73,7 +73,7 @@ void main() {
 
     // Locked: tapping another answer does not change the feedback.
     await tester.tap(find.text('8 ביט'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text(AppStrings.answerCorrect), findsNothing);
   });
 
@@ -83,7 +83,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.text('16 ביט')); // the isOriginalCorrect answer
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text(AppStrings.answerCorrect), findsOneWidget);
     expect(find.text(AppStrings.answerWrong), findsNothing);
