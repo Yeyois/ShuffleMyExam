@@ -6,9 +6,8 @@ import '../../application/providers.dart';
 import '../../core/constants/app_strings.dart';
 import '../../domain/models/exam.dart';
 
-/// Generates a shuffled PDF of [exam], saves it to the shuffled-PDF library so
-/// it can be re-downloaded later, and opens the system share sheet so the user
-/// can save it (Files/Drive), print, or send it — all offline.
+/// Generates a shuffled PDF of [exam] and opens the system share sheet so the
+/// user can save it (Files/Drive), print, or send it — all offline.
 ///
 /// Shown after a successful import (and reusable elsewhere). Manages its own
 /// busy state locally since generation is a one-shot fire-and-share action.
@@ -31,14 +30,13 @@ class _DownloadShuffledPdfButtonState
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final record = await ref
-          .read(shuffledPdfLibraryServiceProvider)
-          .generateAndSave(widget.exam);
-      ref.invalidate(shuffledPdfsProvider);
+      final file = await ref
+          .read(shuffledPdfDownloadServiceProvider)
+          .generate(widget.exam);
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(record.filePath, mimeType: 'application/pdf')],
+          files: [XFile(file.path, mimeType: 'application/pdf')],
           subject: AppStrings.sharePdfSubject,
         ),
       );

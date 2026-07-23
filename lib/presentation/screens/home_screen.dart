@@ -156,14 +156,13 @@ class _ExamTileState extends ConsumerState<_ExamTile> {
     setState(() => _downloading = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final record = await ref
-          .read(shuffledPdfLibraryServiceProvider)
-          .generateAndSave(widget.exam);
-      ref.invalidate(shuffledPdfsProvider);
+      final file = await ref
+          .read(shuffledPdfDownloadServiceProvider)
+          .generate(widget.exam);
 
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(record.filePath, mimeType: 'application/pdf')],
+          files: [XFile(file.path, mimeType: 'application/pdf')],
           subject: AppStrings.sharePdfSubject,
         ),
       );

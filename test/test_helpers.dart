@@ -8,9 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:jct_mixexam/domain/models/answer.dart';
 import 'package:jct_mixexam/domain/models/exam.dart';
 import 'package:jct_mixexam/domain/models/question.dart';
-import 'package:jct_mixexam/domain/models/shuffled_pdf.dart';
 import 'package:jct_mixexam/domain/repositories/exam_repository.dart';
-import 'package:jct_mixexam/domain/repositories/shuffled_pdf_repository.dart';
 
 /// In-memory repository for widget/controller tests.
 class InMemoryExamRepository implements ExamRepository {
@@ -32,22 +30,6 @@ class InMemoryExamRepository implements ExamRepository {
 
   @override
   Future<void> deleteExam(String id) async => _store.remove(id);
-}
-
-/// In-memory shuffled-PDF library for widget/controller tests.
-class InMemoryShuffledPdfRepository implements ShuffledPdfRepository {
-  final Map<String, ShuffledPdf> _store = {};
-
-  @override
-  Future<void> save(ShuffledPdf pdf) async => _store[pdf.id] = pdf;
-
-  @override
-  Future<List<ShuffledPdf>> getShuffledPdfs() async =>
-      _store.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-  @override
-  Future<void> delete(String id) async => _store.remove(id);
 }
 
 /// A 1x1 transparent PNG.
